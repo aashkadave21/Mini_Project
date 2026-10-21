@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Fuel, Radio, Siren, Users } from "lucide-react";
+import { Fuel, Radio, Siren, Users, Loader2, CheckCircle2 } from "lucide-react";
 import { MapCanvas } from "@/components/sdrep/MapCanvas";
 import { Bar, MetricCard, PageHeading, Panel, PanelHeader, StatusPill } from "@/components/sdrep/primitives";
 import { dispatchLog, incidents, teams } from "@/lib/sdrep-data";
+import { api } from "@/lib/api-client";
 
 export const Route = createFileRoute("/control/rescue")({
   head: () => ({
@@ -25,6 +27,23 @@ const statusTone = {
 } as const;
 
 function RescuePage() {
+  const [dispatching, setDispatching] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  const handleAutoDispatch = async () => {
+    setDispatching(true);
+    setFeedback(null);
+    try {
+      const res = await api.rescue.autoAllocate();
+      setFeedback(res.message);
+      setTimeout(() => setFeedback(null), 8000);
+    } catch (err: any) {
+      alert(err.message || "Failed to execute auto-allocation.");
+    } finally {
+      setDispatching(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <PageHeading
@@ -32,11 +51,23 @@ function RescuePage() {
         title="Rescue operations board"
         description="Assign units to incidents, monitor readiness and track vehicle endurance."
         actions={
-          <button className="flex items-center gap-2 rounded-md bg-critical px-3 py-2 text-xs font-medium text-critical-foreground">
-            <Siren className="size-3.5" /> Emergency dispatch
+          <button
+            onClick={handleAutoDispatch}
+            disabled={dispatching}
+            className="flex items-center gap-2 rounded-md bg-critical px-3 py-2 text-xs font-medium text-critical-foreground hover:bg-critical/90 disabled:opacity-50"
+          >
+            {dispatching ? <Loader2 className="size-3.5 animate-spin" /> : <Siren className="size-3.5" />}
+            {dispatching ? "Evaluating greedy allocation…" : "Emergency dispatch"}
           </button>
         }
       />
+
+      {feedback && (
+        <div className="flex items-center gap-2 rounded-md border border-success/30 bg-success/10 px-4 py-3 text-xs text-success">
+          <CheckCircle2 className="size-4 shrink-0" />
+          <span>{feedback}</span>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <MetricCard label="Units deployed" value="5" tone="warning" icon={<Radio className="size-4" />} hint="of 6 total" />

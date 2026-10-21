@@ -1,8 +1,10 @@
+import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight, Building2, Hospital, Radio, ShieldAlert, Siren, User } from "lucide-react";
 import { PublicFooter, PublicNav } from "@/components/sdrep/PublicChrome";
 import { MapCanvas } from "@/components/sdrep/MapCanvas";
 import { Panel, StatusPill } from "@/components/sdrep/primitives";
+import { api } from "@/lib/api-client";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -24,6 +26,27 @@ const portals = [
 ] as const;
 
 function Landing() {
+  const [stats, setStats] = useState({
+    evacuated: "9,350",
+    incidents: "6",
+    meanResponse: "9.8 min",
+  });
+
+  useEffect(() => {
+    api.public
+      .getStatistics()
+      .then((res) => {
+        if (res.data) {
+          setStats({
+            evacuated: res.data.peopleEvacuated?.toLocaleString() || "9,350",
+            incidents: String(res.data.activeIncidents || 6),
+            meanResponse: `${res.data.avgResponseMinutes || 9.8} min`,
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <div className="min-h-dvh">
       <PublicNav />
@@ -49,8 +72,15 @@ function Landing() {
               </Link>
             </div>
             <dl className="mt-10 grid grid-cols-3 gap-4 border-t border-border pt-6">
-              {[["9,350", "Evacuated"], ["6", "Active incidents"], ["9.8 min", "Mean response"]].map(([v, l]) => (
-                <div key={l}><dt className="label-eyebrow">{l}</dt><dd className="num mt-1 text-2xl font-semibold">{v}</dd></div>
+              {[
+                [stats.evacuated, "Evacuated"],
+                [stats.incidents, "Active incidents"],
+                [stats.meanResponse, "Mean response"],
+              ].map(([v, l]) => (
+                <div key={l}>
+                  <dt className="label-eyebrow">{l}</dt>
+                  <dd className="num mt-1 text-2xl font-semibold">{v}</dd>
+                </div>
               ))}
             </dl>
           </div>
@@ -60,7 +90,9 @@ function Landing() {
               <span className="label-eyebrow">Live operational picture</span>
               <StatusPill tone="success">Feed online</StatusPill>
             </div>
-            <div className="p-2"><MapCanvas height="clamp(320px, 42vh, 460px)" /></div>
+            <div className="p-2">
+              <MapCanvas height="clamp(320px, 42vh, 460px)" />
+            </div>
           </Panel>
         </div>
       </section>
@@ -71,10 +103,14 @@ function Landing() {
         <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {portals.map((p) => (
             <Link key={p.to} to={p.to} className="panel group p-5 transition-colors hover:border-ring/60">
-              <span className="grid size-10 place-items-center rounded-md bg-surface-2 text-accent"><p.icon className="size-5" /></span>
+              <span className="grid size-10 place-items-center rounded-md bg-surface-2 text-accent">
+                <p.icon className="size-5" />
+              </span>
               <h3 className="mt-4 text-base font-semibold">{p.title}</h3>
               <p className="mt-1.5 text-sm text-muted-foreground">{p.desc}</p>
-              <span className="mt-4 flex items-center gap-1 text-xs text-accent">Open <ArrowRight className="size-3 transition-transform group-hover:translate-x-0.5" /></span>
+              <span className="mt-4 flex items-center gap-1 text-xs text-accent">
+                Open <ArrowRight className="size-3 transition-transform group-hover:translate-x-0.5" />
+              </span>
             </Link>
           ))}
         </div>

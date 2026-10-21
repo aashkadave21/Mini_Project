@@ -214,6 +214,18 @@ export function ConsoleShell({
                 <span className="block text-xs font-medium">{operator}</span>
                 <span className="label-eyebrow block text-[9px]">{role}</span>
               </span>
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.removeItem("sdrep_token");
+                  localStorage.removeItem("sdrep_user");
+                  window.location.href = "/login";
+                }}
+                title="Sign out"
+                className="ml-1 text-[10px] text-muted-foreground hover:text-critical"
+              >
+                Sign out
+              </button>
             </div>
           </div>
         </header>

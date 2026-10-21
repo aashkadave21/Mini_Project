@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState, useCallback } from "react";
 import {
   AlertTriangle,
   Ambulance,
@@ -12,6 +13,7 @@ import {
   TriangleAlert,
   Users,
   WifiOff,
+  RefreshCw,
 } from "lucide-react";
 import {
   Area,
@@ -31,35 +33,28 @@ import {
 } from "recharts";
 import { MapCanvas } from "@/components/sdrep/MapCanvas";
 import { Bar, MetricCard, Panel, PanelHeader, StatusPill } from "@/components/sdrep/primitives";
-import {
-  casualtyStats,
-  congestionTrend,
-  evacuationProgress,
-  hospitals,
-  incidents,
-  responseTimes,
-  shelters,
-  teams,
-} from "@/lib/sdrep-data";
+import { api } from "@/lib/api-client";
 
-export const Route = createFileRoute("/control/")({
-  head: () => ({
-    meta: [
-      { title: "Disaster Control Centre — SDREP Operations Dashboard" },
-      {
-        name: "description",
-        content:
-          "Live command-centre dashboard: interactive hazard map, active incidents, rescue team status, shelter capacity and evacuation analytics.",
-      },
-      { property: "og:title", content: "Disaster Control Centre — SDREP" },
-      {
-        property: "og:description",
-        content: "Real-time situational awareness for disaster response operations.",
-      },
-    ],
-  }),
-  component: ControlDashboard,
-});
+export const Route = createFileRoute("/control/")(
+  {
+    head: () => ({
+      meta: [
+        { title: "Disaster Control Centre — SDREP Operations Dashboard" },
+        {
+          name: "description",
+          content:
+            "Live command-centre dashboard: interactive hazard map, active incidents, rescue team status, shelter capacity and evacuation analytics.",
+        },
+        { property: "og:title", content: "Disaster Control Centre — SDREP" },
+        {
+          property: "og:description",
+          content: "Real-time situational awareness for disaster response operations.",
+        },
+      ],
+    }),
+    component: ControlDashboard,
+  }
+);
 
 const axis = {
   stroke: "var(--color-muted-foreground)",
@@ -77,19 +72,175 @@ const tooltipStyle = {
 };
 
 function ControlDashboard() {
-  const critical = incidents.filter((i) => i.severity === "critical");
+  const [incidents, setIncidents] = useState<any[]>([]);
+  const [shelters, setShelters] = useState<any[]>([]);
+  const [hospitals, setHospitals] = useState<any[]>([]);
+  const [teams, setTeams] = useState<any[]>([]);
+  const [analytics, setAnalytics] = useState<any>(null);
+  const [stats, setStats] = useState<any>(null);
+  const [routes, setRoutes] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<string>("");
+
+  const fetchAll = useCallback(async () => {
+    try {
+      const [incRes, shelterRes, hospitalRes, teamRes, analyticsRes, statsRes, routeRes] = await Promise.allSettled([
+        api.public.getIncidents(),
+        fetch("http://localhost:3001/api/v1/shelters").then((r) => r.json()),
+        fetch("http://localhost:3001/api/v1/hospitals").then((r) => r.json()),
+        fetch("http://localhost:3001/api/v1/rescue/teams").then((r) => r.json()),
+        api.analytics.getOverview(),
+        api.public.getStatistics(),
+        api.evacuation.getCorridors(),
+      ]);
+
+      if (incRes.status === "fulfilled" && incRes.value.data) setIncidents(incRes.value.data);
+      if (shelterRes.status === "fulfilled" && shelterRes.value.data) setShelters(shelterRes.value.data);
+      if (hospitalRes.status === "fulfilled" && hospitalRes.value.data) setHospitals(hospitalRes.value.data);
+      if (teamRes.status === "fulfilled" && teamRes.value.data) setTeams(teamRes.value.data);
+      if (analyticsRes.status === "fulfilled" && analyticsRes.value.data) setAnalytics(analyticsRes.value.data);
+      if (statsRes.status === "fulfilled" && statsRes.value.data) setStats(statsRes.value.data);
+      if (routeRes.status === "fulfilled" && routeRes.value.data) setRoutes(routeRes.value.data.routes || []);
+
+      setLastUpdated(new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+    } catch (err) {
+      console.error("Dashboard data fetch error:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAll();
+
+    // Set up SSE for real-time updates
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource("http://localhost:3001/api/v1/events?role=CONTROL_CENTRE_ADMIN");
+      eventSource.onmessage = () => {
+        // Re-fetch on any backend event
+        fetchAll();
+      };
+      eventSource.addEventListener("INCIDENT_UPDATED", () => fetchAll());
+      eventSource.addEventListener("MISSION_UPDATED", () => fetchAll());
+      eventSource.addEventListener("SHELTER_OCCUPANCY_CHANGED", () => fetchAll());
+      eventSource.addEventListener("HOSPITAL_DIVERSION_CHANGED", () => fetchAll());
+      eventSource.addEventListener("SOS_ALERT", () => fetchAll());
+    } catch {
+      // SSE not available, fall back to polling
+    }
+
+    // Poll every 30 seconds as fallback
+    const interval = setInterval(fetchAll, 30000);
+
+    return () => {
+      eventSource?.close();
+      clearInterval(interval);
+    };
+  }, [fetchAll]);
+
+  const critical = incidents.filter((i) => i.severity === "critical" && i.status !== "resolved");
+  const activeIncidents = incidents.filter((i) => i.status !== "resolved" && i.status !== "cancelled");
+
   const casualtyColors = ["var(--color-success)", "var(--color-warning)", "var(--color-critical)", "var(--color-muted-foreground)"];
+
+  if (loading) {
+    return (
+      <div className="flex h-64 items-center justify-center gap-2 text-sm text-muted-foreground">
+        <RefreshCw className="size-5 animate-spin" />
+        Loading operational dashboard…
+      </div>
+    );
+  }
+
+  const deployedTeams = teams.filter((t) => t.status !== "available").length;
+
+  // Build dynamic route recommendations from actual evacuation corridors
+  const routeRecommendations = routes.slice(0, 3).map((r: any) => {
+    const hasBlockedSegment = r.segments?.some((segId: string) => {
+      // We'd need road state here; for now use hazard exposure
+      return false;
+    });
+    let tone: "critical" | "warning" | "success" = "success";
+    let note = `${r.label} — ${r.distanceKm?.toFixed(1) || "?"} km, est. ${r.travelTimeMin || "?"} min`;
+    if (r.hazardExposureScore > 5) {
+      tone = "critical";
+      note += ` — HIGH hazard exposure (score ${r.hazardExposureScore?.toFixed(1)})`;
+    } else if (r.hazardExposureScore > 2) {
+      tone = "warning";
+      note += ` — moderate hazard exposure`;
+    }
+    return { r: r.id, note, tone };
+  });
+
+  // Fall back to static recommendations only if no routes loaded
+  const displayRoutes =
+    routeRecommendations.length > 0
+      ? routeRecommendations
+      : [
+          { r: "No routes", note: "No evacuation routes computed yet. Use the Evacuation tab to recalculate.", tone: "warning" as const },
+        ];
 
   return (
     <div className="space-y-4">
-      {/* Metric strip */}
+      {/* Last updated indicator */}
+      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+        <span>Live operational data</span>
+        <button
+          onClick={fetchAll}
+          className="flex items-center gap-1 rounded px-2 py-1 hover:bg-surface-2 transition-colors"
+        >
+          <RefreshCw className="size-3" />
+          {lastUpdated ? `Updated ${lastUpdated}` : "Refresh"}
+        </button>
+      </div>
+
+      {/* Metric strip — all values from real API data */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <MetricCard label="Active incidents" value={incidents.length} tone="critical" icon={<TriangleAlert className="size-4" />} delta="+2" hint="last 30 min" />
-        <MetricCard label="People evacuated" value="9,350" tone="success" icon={<Users className="size-4" />} delta="+750" hint="last hour" />
-        <MetricCard label="Pending evacuation" value="1,650" tone="warning" icon={<RouteIcon className="size-4" />} delta="-420" hint="Sector 7 focus" />
-        <MetricCard label="Teams deployed" value={`${teams.filter((t) => t.status !== "available").length}/${teams.length}`} tone="info" icon={<Radio className="size-4" />} hint="1 available" />
-        <MetricCard label="Avg response" value="9.8" unit="min" tone="warning" icon={<Timer className="size-4" />} delta="+1.4" hint="vs target 8.0" />
-        <MetricCard label="Shelter load" value="78" unit="%" tone="warning" icon={<Building2 className="size-4" />} hint="2 near capacity" />
+        <MetricCard
+          label="Active incidents"
+          value={activeIncidents.length}
+          tone="critical"
+          icon={<TriangleAlert className="size-4" />}
+          hint={`${critical.length} critical`}
+        />
+        <MetricCard
+          label="People evacuated"
+          value={stats ? stats.peopleEvacuated.toLocaleString() : "—"}
+          tone="success"
+          icon={<Users className="size-4" />}
+          hint="total shelter occupancy"
+        />
+        <MetricCard
+          label="Pending evacuation"
+          value={stats ? stats.pendingEvacuation.toLocaleString() : "—"}
+          tone="warning"
+          icon={<RouteIcon className="size-4" />}
+          hint="incoming + open SOS"
+        />
+        <MetricCard
+          label="Teams deployed"
+          value={`${deployedTeams}/${teams.length}`}
+          tone="info"
+          icon={<Radio className="size-4" />}
+          hint={`${teams.length - deployedTeams} available`}
+        />
+        <MetricCard
+          label="Avg response"
+          value={stats?.avgResponseMinutes !== null && stats?.avgResponseMinutes !== undefined ? String(stats.avgResponseMinutes) : "—"}
+          unit="min"
+          tone="warning"
+          icon={<Timer className="size-4" />}
+          hint="from completed missions"
+        />
+        <MetricCard
+          label="Shelter load"
+          value={stats ? String(stats.shelterLoadPercent) : "—"}
+          unit="%"
+          tone={stats?.shelterLoadPercent >= 90 ? "critical" : stats?.shelterLoadPercent >= 70 ? "warning" : "success"}
+          icon={<Building2 className="size-4" />}
+          hint={`${shelters.filter((s) => s.status === "near-full" || s.status === "full").length} near/full capacity`}
+        />
       </div>
 
       {/* Map + intelligence */}
@@ -97,7 +248,7 @@ function ControlDashboard() {
         <Panel className="overflow-hidden">
           <PanelHeader
             title="Live operational map"
-            meta="12 layers · updated 3s ago"
+            meta={`${lastUpdated ? `updated ${lastUpdated}` : "loading"}`}
             icon={<Layers className="size-4" />}
             action={
               <div className="hidden items-center gap-1.5 sm:flex">
@@ -136,32 +287,35 @@ function ControlDashboard() {
           <Panel>
             <PanelHeader title="Active incidents" meta={`${critical.length} critical`} icon={<TriangleAlert className="size-4" />} />
             <ul className="max-h-72 divide-y divide-border overflow-y-auto">
-              {incidents.map((i) => (
-                <li key={i.id} className="cursor-pointer px-4 py-3 transition-colors hover:bg-surface-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="num text-[11px] text-muted-foreground">{i.id}</span>
-                    <StatusPill tone={i.severity === "critical" ? "critical" : i.severity === "warning" ? "warning" : "info"} pulse={i.severity === "critical"}>
-                      {i.severity}
-                    </StatusPill>
-                  </div>
-                  <p className="mt-1 truncate text-sm font-medium">{i.title}</p>
-                  <p className="mt-0.5 flex items-center justify-between text-[11px] text-muted-foreground">
-                    <span className="truncate">{i.sector}</span>
-                    <span className="num shrink-0">{i.victims} affected · T+{i.reported}</span>
-                  </p>
-                </li>
-              ))}
+              {activeIncidents.length === 0 ? (
+                <li className="px-4 py-6 text-center text-sm text-muted-foreground">No active incidents.</li>
+              ) : (
+                activeIncidents.map((i) => (
+                  <li key={i.id} className="cursor-pointer px-4 py-3 transition-colors hover:bg-surface-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="num text-[11px] text-muted-foreground">{i.id}</span>
+                      <StatusPill
+                        tone={i.severity === "critical" ? "critical" : i.severity === "warning" ? "warning" : "info"}
+                        pulse={i.severity === "critical"}
+                      >
+                        {i.severity}
+                      </StatusPill>
+                    </div>
+                    <p className="mt-1 truncate text-sm font-medium">{i.title}</p>
+                    <p className="mt-0.5 flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span className="truncate">{i.sector}</span>
+                      <span className="num shrink-0">{i.victims} affected · {i.reported}</span>
+                    </p>
+                  </li>
+                ))
+              )}
             </ul>
           </Panel>
 
           <Panel>
             <PanelHeader title="Route recommendations" icon={<RouteIcon className="size-4" />} />
             <ul className="divide-y divide-border">
-              {[
-                { r: "Route A", note: "Riverside Arterial submerged — divert via Ridge Link", tone: "critical" as const },
-                { r: "Route B", note: "Optimal, 14 min to North Ridge Sports Complex", tone: "success" as const },
-                { r: "Route C", note: "Congestion 68% — stagger dispatch by 6 min", tone: "warning" as const },
-              ].map((x) => (
+              {displayRoutes.map((x) => (
                 <li key={x.r} className="flex items-start gap-3 px-4 py-3">
                   <StatusPill tone={x.tone}>{x.r}</StatusPill>
                   <p className="min-w-0 flex-1 text-xs text-muted-foreground">{x.note}</p>
@@ -175,7 +329,7 @@ function ControlDashboard() {
             <PanelHeader title="Shelter capacity" icon={<Building2 className="size-4" />} />
             <ul className="space-y-3 p-4">
               {shelters.slice(0, 4).map((s) => {
-                const pct = (s.occupancy / s.capacity) * 100;
+                const pct = s.capacity > 0 ? (s.occupancy / s.capacity) * 100 : 0;
                 return (
                   <li key={s.id}>
                     <div className="flex items-center justify-between gap-2 text-xs">
@@ -190,36 +344,56 @@ function ControlDashboard() {
                   </li>
                 );
               })}
+              {shelters.length === 0 && (
+                <li className="text-center text-xs text-muted-foreground">Loading shelter data…</li>
+              )}
             </ul>
           </Panel>
 
           <Panel>
             <PanelHeader title="System warnings" icon={<AlertTriangle className="size-4" />} />
             <ul className="divide-y divide-border text-xs">
-              <li className="flex items-center gap-2 px-4 py-2.5">
-                <Signal className="size-3.5 shrink-0 text-warning" />
-                <span className="min-w-0 flex-1 truncate">Sector 18 mesh degraded — 2 nodes down</span>
-              </li>
-              <li className="flex items-center gap-2 px-4 py-2.5">
-                <WifiOff className="size-3.5 shrink-0 text-critical" />
-                <span className="min-w-0 flex-1 truncate">Dock Road CCTV cluster offline</span>
-              </li>
-              <li className="flex items-center gap-2 px-4 py-2.5">
-                <Ambulance className="size-3.5 shrink-0 text-info" />
-                <span className="min-w-0 flex-1 truncate">Riverside Trauma at 94% triage load</span>
-              </li>
+              {hospitals.filter((h) => h.diversion).map((h) => (
+                <li key={h.id} className="flex items-center gap-2 px-4 py-2.5">
+                  <Ambulance className="size-3.5 shrink-0 text-critical" />
+                  <span className="min-w-0 flex-1 truncate">{h.name} — DIVERSION active{h.diversionReason ? `: ${h.diversionReason}` : ""}</span>
+                </li>
+              ))}
+              {hospitals.filter((h) => h.triageLoad > 85).map((h) => (
+                <li key={`load-${h.id}`} className="flex items-center gap-2 px-4 py-2.5">
+                  <Ambulance className="size-3.5 shrink-0 text-warning" />
+                  <span className="min-w-0 flex-1 truncate">{h.name} at {h.triageLoad}% triage load</span>
+                </li>
+              ))}
+              {teams.filter((t) => t.fuel < 25).map((t) => (
+                <li key={`fuel-${t.id}`} className="flex items-center gap-2 px-4 py-2.5">
+                  <Signal className="size-3.5 shrink-0 text-warning" />
+                  <span className="min-w-0 flex-1 truncate">{t.callsign} — low fuel ({t.fuel}%)</span>
+                </li>
+              ))}
+              {shelters.filter((s) => s.status === "full").map((s) => (
+                <li key={`full-${s.id}`} className="flex items-center gap-2 px-4 py-2.5">
+                  <WifiOff className="size-3.5 shrink-0 text-critical" />
+                  <span className="min-w-0 flex-1 truncate">{s.name} — AT CAPACITY (no new intake)</span>
+                </li>
+              ))}
+              {hospitals.filter((h) => !h.diversion && h.triageLoad <= 85).length === hospitals.length &&
+               teams.filter((t) => t.fuel < 25).length === 0 &&
+               shelters.filter((s) => s.status === "full").length === 0 && (
+                <li className="px-4 py-2.5 text-muted-foreground text-center">No active system warnings.</li>
+              )}
             </ul>
           </Panel>
         </div>
       </div>
 
-      {/* Analytics */}
+      {/* Analytics — all from backend */}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Panel>
-          <PanelHeader title="Congestion trend" meta="6 h" />
+          <PanelHeader title="Congestion trend" meta="derived from road states" />
           <div className="h-40 p-3">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={congestionTrend}>
+              <LineChart data={analytics?.congestionTrend || []}>
                 <CartesianGrid stroke="var(--color-grid-line)" vertical={false} />
                 <XAxis dataKey="t" {...axis} />
                 <YAxis {...axis} width={26} />
@@ -232,10 +406,10 @@ function ControlDashboard() {
         </Panel>
 
         <Panel>
-          <PanelHeader title="Evacuation progress" meta="85%" />
+          <PanelHeader title="Evacuation progress" meta={stats ? `${stats.shelterLoadPercent}% capacity used` : ""} />
           <div className="h-40 p-3">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={evacuationProgress}>
+              <AreaChart data={analytics?.evacuationProgress || []}>
                 <defs>
                   <linearGradient id="evac" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="var(--color-success)" stopOpacity={0.6} />
@@ -253,10 +427,10 @@ function ControlDashboard() {
         </Panel>
 
         <Panel>
-          <PanelHeader title="Response time by sector" meta="minutes" />
+          <PanelHeader title="Response time by sector" meta="minutes (completed missions)" />
           <div className="h-40 p-3">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={responseTimes}>
+              <BarChart data={analytics?.responseTimes || []}>
                 <CartesianGrid stroke="var(--color-grid-line)" vertical={false} />
                 <XAxis dataKey="sector" {...axis} />
                 <YAxis {...axis} width={26} />
@@ -268,27 +442,36 @@ function ControlDashboard() {
         </Panel>
 
         <Panel>
-          <PanelHeader title="Triage distribution" meta="1,191 assessed" />
+          <PanelHeader
+            title="Triage distribution"
+            meta={analytics?.totalCasualties ? `${analytics.totalCasualties} assessed` : "from triage records"}
+          />
           <div className="flex h-40 items-center p-3">
-            <ResponsiveContainer width="55%" height="100%">
-              <PieChart>
-                <Pie data={casualtyStats} dataKey="value" innerRadius={30} outerRadius={52} paddingAngle={3} stroke="none">
-                  {casualtyStats.map((_, idx) => (
-                    <Cell key={idx} fill={casualtyColors[idx]} />
+            {analytics?.casualtyStats && analytics.casualtyStats.some((c: any) => c.value > 0) ? (
+              <>
+                <ResponsiveContainer width="55%" height="100%">
+                  <PieChart>
+                    <Pie data={analytics.casualtyStats} dataKey="value" innerRadius={30} outerRadius={52} paddingAngle={3} stroke="none">
+                      {analytics.casualtyStats.map((_: any, idx: number) => (
+                        <Cell key={idx} fill={casualtyColors[idx]} />
+                      ))}
+                    </Pie>
+                    <Tooltip contentStyle={tooltipStyle} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <ul className="flex-1 space-y-1.5 text-[11px]">
+                  {analytics.casualtyStats.map((c: any, idx: number) => (
+                    <li key={c.name} className="flex items-center gap-2">
+                      <span className="size-2 rounded-full" style={{ background: casualtyColors[idx] }} aria-hidden />
+                      <span className="flex-1 text-muted-foreground">{c.name}</span>
+                      <span className="num">{c.value}</span>
+                    </li>
                   ))}
-                </Pie>
-                <Tooltip contentStyle={tooltipStyle} />
-              </PieChart>
-            </ResponsiveContainer>
-            <ul className="flex-1 space-y-1.5 text-[11px]">
-              {casualtyStats.map((c, idx) => (
-                <li key={c.name} className="flex items-center gap-2">
-                  <span className="size-2 rounded-full" style={{ background: casualtyColors[idx] }} aria-hidden />
-                  <span className="flex-1 text-muted-foreground">{c.name}</span>
-                  <span className="num">{c.value}</span>
-                </li>
-              ))}
-            </ul>
+                </ul>
+              </>
+            ) : (
+              <p className="w-full text-center text-xs text-muted-foreground">No triage cases recorded yet.</p>
+            )}
           </div>
         </Panel>
       </div>
@@ -307,24 +490,35 @@ function ControlDashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {hospitals.map((h) => (
-                <tr key={h.id} className="transition-colors hover:bg-surface-2">
-                  <td className="px-4 py-2.5">{h.name}</td>
-                  <td className="num px-4 py-2.5">{h.bedsFree}/{h.beds}</td>
-                  <td className="num px-4 py-2.5">{h.icuFree}/{h.icu}</td>
-                  <td className="num px-4 py-2.5">{h.incoming}</td>
-                  <td className="px-4 py-2.5">
-                    <div className="w-28">
-                      <Bar value={h.triageLoad} tone={h.triageLoad > 90 ? "critical" : h.triageLoad > 70 ? "warning" : "success"} />
-                    </div>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <StatusPill tone={h.triageLoad > 90 ? "critical" : h.triageLoad > 70 ? "warning" : "success"}>
-                      {h.triageLoad > 90 ? "Saturated" : h.triageLoad > 70 ? "Strained" : "Accepting"}
-                    </StatusPill>
+              {hospitals.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-4 text-center text-sm text-muted-foreground">
+                    Loading hospital data…
                   </td>
                 </tr>
-              ))}
+              ) : (
+                hospitals.map((h) => (
+                  <tr key={h.id} className="transition-colors hover:bg-surface-2">
+                    <td className="px-4 py-2.5">
+                      {h.name}
+                      {h.diversion && <span className="ml-2 rounded-sm bg-critical/20 px-1.5 py-0.5 text-[10px] font-bold text-critical">DIVERSION</span>}
+                    </td>
+                    <td className="num px-4 py-2.5">{h.bedsFree}/{h.beds}</td>
+                    <td className="num px-4 py-2.5">{h.icuFree}/{h.icu}</td>
+                    <td className="num px-4 py-2.5">{h.incoming}</td>
+                    <td className="px-4 py-2.5">
+                      <div className="w-28">
+                        <Bar value={h.triageLoad} tone={h.triageLoad > 90 ? "critical" : h.triageLoad > 70 ? "warning" : "success"} />
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <StatusPill tone={h.diversion ? "critical" : h.triageLoad > 90 ? "critical" : h.triageLoad > 70 ? "warning" : "success"}>
+                        {h.diversion ? "Diverting" : h.triageLoad > 90 ? "Saturated" : h.triageLoad > 70 ? "Strained" : "Accepting"}
+                      </StatusPill>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

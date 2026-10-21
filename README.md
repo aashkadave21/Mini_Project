@@ -1,12 +1,54 @@
-# Guardian Command
+# SDREP — Smart Disaster Rescue and Evacuation Planner
+## Full-Stack Emergency Management & Autonomous Routing Platform
 
-Prompt: Design the complete frontend for Smart Disaster Rescue & Evacuation Planner
+> **SPIT Computer Engineering · Semester V Mini Project (AY 2026–27)**  
+> Aligned with APNI Leap Foundation Integration Course
 
-Act as a senior frontend architect, UI/UX designer, and React + Tailwind CSS expert with experience designing mission-critical emergency management systems (such as disaster response platforms, emergency operation centers, aviation control systems, and healthcare dashboards).
+---
 
-I am building a Smart Disaster Rescue & Evacuation Planner (SDREP) for a Computer Engineering mini-project. The frontend should look like a real government-grade emergency response platform, comparable in quality to modern SaaS products (Stripe Dashboard, Linear, Vercel, Arc Browser UI, Figma, and modern command-center interfaces).
+### Quick Start Guide
 
-The UI must be professional, premium, futuristic, highly intuitive, and optimized for high-stress emergency situations. It should not look like a student project.
+#### 1. Start the Backend API Server
+```bash
+npm run server
+```
+*Runs the Express REST API engine on `http://localhost:3001` with Server-Sent Events (SSE) and persistent ACID relational storage.*
+
+#### 2. Start the Frontend Application
+```bash
+npm run dev
+```
+*Runs the TanStack Start / Vite dashboard on `http://localhost:8081`.*
+
+#### 3. Run the Automated Test Suite
+```bash
+npm run test:backend
+```
+*Executes all 19 unit & integration tests covering Dijkstra routing, blocked road exclusion, DBMS transaction rollback, scrypt security, and greedy resource allocation.*
+
+---
+
+### Demo Login Accounts (Password: `Password123!`)
+
+| Portal | Role | Username | Access Route |
+| :--- | :--- | :--- | :--- |
+| **Control Centre** | `CONTROL_CENTRE_ADMIN` | `OPS-1` | `/control` |
+| **Rescue Unit** | `RESCUE_TEAM` | `ALPHA-1` | `/portal/rescue` |
+| **Shelter Admin** | `SHELTER_ADMIN` | `SH-01` | `/portal/shelter` |
+| **Hospital Coordinator** | `HSP-1` | `HSP-1` | `/portal/hospital` |
+| **Citizen** | `CITIZEN` | `citizen` | `/portal/citizen` |
+
+---
+
+### Architecture & Detailed Academic Report
+- Full Academic Engineering Report: [`docs/SDREP_FULLSTACK_INTEGRATION_REPORT.md`](file:///c:/Users/aashk/OneDrive/Desktop/Kavach/Mini_Project/docs/SDREP_FULLSTACK_INTEGRATION_REPORT.md)
+- Database DDL Schema: [`server/src/db/schema.sql`](file:///c:/Users/aashk/OneDrive/Desktop/Kavach/Mini_Project/server/src/db/schema.sql)
+- Centralized API Router: [`server/src/routes/api.router.ts`](file:///c:/Users/aashk/OneDrive/Desktop/Kavach/Mini_Project/server/src/routes/api.router.ts)
+
+---
+
+# Original Design Specification & Guardian Command
+
 
 The frontend should be designed using:
 

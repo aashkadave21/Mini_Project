@@ -1,0 +1,386 @@
+import crypto from "node:crypto";
+import { db } from "./db.js";
+import type {
+  User,
+  Incident,
+  HazardZone,
+  Shelter,
+  RescueTeam,
+  RescueMission,
+  Victim,
+  Hospital,
+  TriageCase,
+  AmbulanceArrival,
+  BloodStock,
+  RoadNode,
+  RoadSegment,
+  EvacuationRoute,
+  CitizenProfile,
+  Volunteer,
+  SupplyRequest,
+} from "../types/index.js";
+
+export function hashPassword(plainText: string): string {
+  const salt = "sdrep_secure_salt_2026";
+  return crypto.scryptSync(plainText, salt, 32).toString("hex");
+}
+
+export async function seedDatabase(force = false) {
+  if (!force && db.state.users && db.state.users.length > 0) {
+    console.log("[Seed] Database already contains records. Skipping seed.");
+    return;
+  }
+
+  console.log("[Seed] Seeding realistic demonstration data into SDREP database...");
+
+  const defaultPasswordHash = hashPassword("Password123!");
+
+  const users: User[] = [
+    {
+      id: "USR-ADMIN-1",
+      username: "OPS-1",
+      fullName: "Commander S. Deshmukh",
+      email: "commander@sdrep.mumbai.gov.in",
+      role: "CONTROL_CENTRE_ADMIN",
+      passwordHash: defaultPasswordHash,
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: "USR-CITIZEN-1",
+      username: "citizen",
+      fullName: "S. Iyer",
+      email: "s.iyer@citizen.net",
+      role: "CITIZEN",
+      associatedEntityId: "CIT-01",
+      passwordHash: defaultPasswordHash,
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: "USR-RESCUE-1",
+      username: "ALPHA-1",
+      fullName: "Capt. R. Verma",
+      email: "verma.alpha1@ndrf.gov.in",
+      role: "RESCUE_TEAM",
+      associatedEntityId: "T1",
+      passwordHash: defaultPasswordHash,
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: "USR-SHELTER-1",
+      username: "SH-01",
+      fullName: "Dr. Ananya Kulkarni",
+      email: "kulkarni.sh01@relief.gov.in",
+      role: "SHELTER_ADMIN",
+      associatedEntityId: "SH-01",
+      passwordHash: defaultPasswordHash,
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: "USR-HOSPITAL-1",
+      username: "HSP-1",
+      fullName: "Dr. Tariq Sheikh",
+      email: "sheikh.triage@citygen.org",
+      role: "HOSPITAL_STAFF",
+      associatedEntityId: "HSP-1",
+      passwordHash: defaultPasswordHash,
+      createdAt: new Date().toISOString(),
+    },
+  ];
+
+  const incidents: Incident[] = [
+    { id: "INC-4471", title: "Sector 7 embankment breach", type: "flood", severity: "critical", sector: "Sector 7 · Riverside", reported: "00:04", victims: 128, status: "dispatched", pos: [19.092, 72.862], description: "Floodwaters exceeding 2.1m following embankment collapse near river turn.", createdAt: new Date(Date.now() - 3600000).toISOString(), updatedAt: new Date().toISOString() },
+    { id: "INC-4468", title: "Warehouse fire, dock road", type: "fire", severity: "critical", sector: "Sector 3 · Port", reported: "00:11", victims: 24, status: "on-scene", pos: [19.062, 72.848], description: "Active chemical and structural fire in storage cluster.", createdAt: new Date(Date.now() - 3200000).toISOString(), updatedAt: new Date().toISOString() },
+    { id: "INC-4465", title: "Residential block partial collapse", type: "collapse", severity: "warning", sector: "Sector 12 · Old Town", reported: "00:26", victims: 41, status: "dispatched", pos: [19.083, 72.895], description: "G+3 residential masonry failure; search and rescue in progress.", createdAt: new Date(Date.now() - 2400000).toISOString(), updatedAt: new Date().toISOString() },
+    { id: "INC-4462", title: "Dialysis patients stranded", type: "medical", severity: "warning", sector: "Sector 9 · Civic", reported: "00:38", victims: 12, status: "unassigned", pos: [19.07, 72.905], description: "Patients stranded on first floor without power backup.", createdAt: new Date(Date.now() - 1800000).toISOString(), updatedAt: new Date().toISOString() },
+    { id: "INC-4459", title: "Hillside slip near bypass", type: "landslide", severity: "info", sector: "Sector 18 · North Ridge", reported: "01:02", victims: 3, status: "on-scene", pos: [19.105, 72.888], description: "Debris obstructing North Ridge spur road.", createdAt: new Date(Date.now() - 1200000).toISOString(), updatedAt: new Date().toISOString() },
+    { id: "INC-4455", title: "Ammonia leak, cold storage", type: "chemical", severity: "critical", sector: "Sector 3 · Port", reported: "01:19", victims: 9, status: "dispatched", pos: [19.056, 72.861], description: "Vapor plume blowing northeast toward transit colony.", createdAt: new Date(Date.now() - 600000).toISOString(), updatedAt: new Date().toISOString() },
+  ];
+
+  const hazards: HazardZone[] = [
+    {
+      id: "HZ-1",
+      kind: "flood",
+      label: "Flood zone · 2.1 m",
+      severity: "critical",
+      ring: [[19.1, 72.852], [19.102, 72.872], [19.086, 72.878], [19.08, 72.862]],
+      penaltyWeight: 8.5,
+    },
+    {
+      id: "HZ-2",
+      kind: "fire",
+      label: "Fire perimeter · Port",
+      severity: "critical",
+      ring: [[19.058, 72.842], [19.066, 72.846], [19.065, 72.858], [19.055, 72.856]],
+      penaltyWeight: 10.0,
+    },
+  ];
+
+  const shelters: Shelter[] = [
+    { id: "SH-01", name: "Municipal Stadium Relief Camp", capacity: 2400, occupancy: 1876, incoming: 220, medical: true, status: "near-full", pos: [19.088, 72.874], waterStock: 4200, foodStock: 1580, blanketsStock: 1720, medicalKitsStock: 46, sanitationStock: 310, lastUpdated: new Date().toISOString() },
+    { id: "SH-02", name: "Govt. Higher Secondary School", capacity: 900, occupancy: 902, incoming: 60, medical: false, status: "full", pos: [19.068, 72.882], waterStock: 1200, foodStock: 800, blanketsStock: 900, medicalKitsStock: 10, sanitationStock: 95, lastUpdated: new Date().toISOString() },
+    { id: "SH-03", name: "Community Hall, Sector 12", capacity: 640, occupancy: 311, incoming: 45, medical: true, status: "open", pos: [19.079, 72.9], waterStock: 3100, foodStock: 2200, blanketsStock: 550, medicalKitsStock: 32, sanitationStock: 210, lastUpdated: new Date().toISOString() },
+    { id: "SH-04", name: "North Ridge Sports Complex", capacity: 1500, occupancy: 402, incoming: 130, medical: false, status: "open", pos: [19.104, 72.87], waterStock: 5000, foodStock: 4100, blanketsStock: 1300, medicalKitsStock: 25, sanitationStock: 420, lastUpdated: new Date().toISOString() },
+    { id: "SH-05", name: "Dockyard Workers Union Hall", capacity: 520, occupancy: 498, incoming: 18, medical: false, status: "near-full", pos: [19.058, 72.855], waterStock: 900, foodStock: 650, blanketsStock: 400, medicalKitsStock: 12, sanitationStock: 80, lastUpdated: new Date().toISOString() },
+  ];
+
+  const hospitals: Hospital[] = [
+    { id: "HSP-1", name: "City General Hospital", beds: 640, bedsFree: 72, icu: 48, icuFree: 5, incoming: 14, triageLoad: 88, diversion: false, pos: [19.075, 72.877], updatedAt: new Date().toISOString() },
+    { id: "HSP-2", name: "Riverside Trauma Centre", beds: 220, bedsFree: 18, icu: 22, icuFree: 1, incoming: 9, triageLoad: 94, diversion: false, pos: [19.094, 72.868], updatedAt: new Date().toISOString() },
+    { id: "HSP-3", name: "North Ridge Multispecialty", beds: 380, bedsFree: 141, icu: 30, icuFree: 11, incoming: 4, triageLoad: 52, diversion: false, pos: [19.101, 72.893], updatedAt: new Date().toISOString() },
+  ];
+
+  const rescueTeams: RescueTeam[] = [
+    { id: "T1", callsign: "ALPHA-1", unit: "NDRF Water Rescue", members: 8, status: "on-scene", mission: "INC-4471", fuel: 62, eta: "—", pos: [19.09, 72.864], updatedAt: new Date().toISOString() },
+    { id: "T2", callsign: "BRAVO-2", unit: "Fire & Rescue", members: 6, status: "en-route", mission: "INC-4468", fuel: 41, eta: "4 min", pos: [19.066, 72.853], updatedAt: new Date().toISOString() },
+    { id: "T3", callsign: "CHARLIE-3", unit: "Urban Search & Rescue", members: 10, status: "en-route", mission: "INC-4465", fuel: 77, eta: "11 min", pos: [19.081, 72.889], updatedAt: new Date().toISOString() },
+    { id: "T4", callsign: "DELTA-4", unit: "Medical Response", members: 5, status: "available", mission: null, fuel: 90, eta: "—", pos: [19.072, 72.9], updatedAt: new Date().toISOString() },
+    { id: "T5", callsign: "ECHO-5", unit: "Coast Guard Air", members: 4, status: "returning", mission: null, fuel: 28, eta: "9 min", pos: [19.052, 72.874], updatedAt: new Date().toISOString() },
+    { id: "T6", callsign: "FOXTROT-6", unit: "Drone Recon", members: 2, status: "on-scene", mission: "INC-4459", fuel: 55, eta: "—", pos: [19.107, 72.885], updatedAt: new Date().toISOString() },
+  ];
+
+  const rescueMissions: RescueMission[] = [
+    { id: "MIS-4471", incidentId: "INC-4471", assignedTeamId: "T1", status: "ON_SCENE", victimsCount: 128, triageSummary: { red: 14, yellow: 38, green: 76 }, notes: "Water depth 2.2m. Deploying 2 Gemini boats for sector clearance.", createdAt: new Date().toISOString() },
+    { id: "MIS-4468", incidentId: "INC-4468", assignedTeamId: "T2", status: "EN_ROUTE", victimsCount: 24, triageSummary: { red: 4, yellow: 8, green: 12 }, notes: "Dock warehouse fire perimeter defense.", createdAt: new Date().toISOString() },
+    { id: "MIS-4465", incidentId: "INC-4465", assignedTeamId: "T3", status: "EN_ROUTE", victimsCount: 41, triageSummary: { red: 5, yellow: 15, green: 21 }, notes: "Acoustic listening devices deployed.", createdAt: new Date().toISOString() },
+  ];
+
+  const victims: Victim[] = [
+    { id: "V-2201", missionId: "MIS-4471", name: "Unnamed male, ~60", triage: "Red", note: "Trapped, first floor · Hypothermia", status: "trapped", tone: "critical" },
+    { id: "V-2202", missionId: "MIS-4471", name: "Family of 4", triage: "Yellow", note: "Rooftop, Sector 7 · Awaiting watercraft", status: "trapped", tone: "warning" },
+    { id: "V-2203", missionId: "MIS-4471", name: "Dialysis patient", triage: "Yellow", note: "Needs urgent clinical transport", status: "triage", tone: "warning" },
+    { id: "V-2204", missionId: "MIS-4471", name: "3 residents", triage: "Green", note: "Awaiting boat at sector cul-de-sac", status: "triage", tone: "success" },
+  ];
+
+  const triageCases: TriageCase[] = [
+    { id: "C-8841", hospitalId: "HSP-1", tag: "Red", desc: "Crush injury, hypotensive", wait: "0 min", arrivalTime: new Date(Date.now() - 600000).toISOString(), status: "IN_TREATMENT" },
+    { id: "C-8840", hospitalId: "HSP-1", tag: "Red", desc: "Smoke inhalation, intubated", wait: "4 min", arrivalTime: new Date(Date.now() - 400000).toISOString(), status: "IN_TREATMENT" },
+    { id: "C-8836", hospitalId: "HSP-1", tag: "Yellow", desc: "Open tibia fracture", wait: "18 min", arrivalTime: new Date(Date.now() - 1200000).toISOString(), status: "WAITING" },
+    { id: "C-8829", hospitalId: "HSP-1", tag: "Yellow", desc: "Hypothermia, elderly", wait: "26 min", arrivalTime: new Date(Date.now() - 1600000).toISOString(), status: "WAITING" },
+    { id: "C-8817", hospitalId: "HSP-1", tag: "Green", desc: "Lacerations, ambulatory", wait: "51 min", arrivalTime: new Date(Date.now() - 3200000).toISOString(), status: "WAITING" },
+  ];
+
+  const ambulances: AmbulanceArrival[] = [
+    { id: "AMB-14", hospitalId: "HSP-1", unit: "AMB-14", eta: "3 min", triage: "Red", cases: 1, tone: "critical", arrived: false },
+    { id: "AMB-07", hospitalId: "HSP-1", unit: "AMB-07", eta: "9 min", triage: "Yellow", cases: 3, tone: "warning", arrived: false },
+    { id: "HELI-2", hospitalId: "HSP-1", unit: "HELI-2", eta: "12 min", triage: "Red", cases: 2, tone: "critical", arrived: false },
+    { id: "AMB-22", hospitalId: "HSP-1", unit: "AMB-22", eta: "21 min", triage: "Green", cases: 5, tone: "success", arrived: false },
+  ];
+
+  const bloodInventory: BloodStock[] = [
+    { group: "O-", units: 12, min: 20 },
+    { group: "O+", units: 64, min: 40 },
+    { group: "A+", units: 38, min: 30 },
+    { group: "B+", units: 27, min: 30 },
+    { group: "AB+", units: 9, min: 10 },
+  ];
+
+  const roadNodes: RoadNode[] = [
+    { id: "N_S7", label: "Sector 7 Riverside Junction", pos: [19.092, 72.862] },
+    { id: "N_RIVER_MID", label: "Riverside Bend", pos: [19.089, 72.868] },
+    { id: "N_SH01", label: "Municipal Stadium Gate", pos: [19.088, 72.874] },
+    { id: "N_S3", label: "Sector 3 Port Entrance", pos: [19.062, 72.848] },
+    { id: "N_DOCK_MID", label: "Dock Overbridge", pos: [19.078, 72.858] },
+    { id: "N_CIVIC", label: "Civic Centre Ring", pos: [19.076, 72.889] },
+    { id: "N_SH04", label: "North Ridge Complex Entry", pos: [19.104, 72.87] },
+    { id: "N_S12", label: "Sector 12 Market", pos: [19.083, 72.895] },
+    { id: "N_SH03", label: "Community Hall Gate", pos: [19.079, 72.9] },
+    { id: "N_BYPASS_N", label: "North Ridge Bypass Exit", pos: [19.108, 72.878] },
+  ];
+
+  const roadEdges: RoadSegment[] = [
+    {
+      id: "R1",
+      name: "Riverside Arterial",
+      state: "flooded",
+      startNode: "N_S7",
+      endNode: "N_SH01",
+      distanceKm: 2.1,
+      baseTimeMin: 8,
+      path: [[19.098, 72.856], [19.09, 72.866], [19.083, 72.872]],
+    },
+    {
+      id: "R2",
+      name: "Dock Road",
+      state: "blocked",
+      startNode: "N_S3",
+      endNode: "N_DOCK_MID",
+      distanceKm: 2.8,
+      baseTimeMin: 10,
+      path: [[19.06, 72.844], [19.062, 72.856], [19.066, 72.866]],
+    },
+    {
+      id: "R3",
+      name: "Civic Ring Road",
+      state: "congested",
+      startNode: "N_CIVIC",
+      endNode: "N_SH01",
+      distanceKm: 3.4,
+      baseTimeMin: 14,
+      path: [[19.07, 72.9], [19.076, 72.889], [19.079, 72.878]],
+    },
+    {
+      id: "R4",
+      name: "North Bypass",
+      state: "clear",
+      startNode: "N_BYPASS_N",
+      endNode: "N_SH04",
+      distanceKm: 4.2,
+      baseTimeMin: 7,
+      path: [[19.108, 72.878], [19.096, 72.882], [19.086, 72.892]],
+    },
+    {
+      id: "R_LINK_1",
+      name: "Ridge Link Diversion (Safe Corridor)",
+      state: "clear",
+      startNode: "N_S7",
+      endNode: "N_RIVER_MID",
+      distanceKm: 1.2,
+      baseTimeMin: 4,
+      path: [[19.092, 72.862], [19.089, 72.868], [19.088, 72.874]],
+    },
+    {
+      id: "R_LINK_2",
+      name: "Old Town Link",
+      state: "clear",
+      startNode: "N_S12",
+      endNode: "N_SH03",
+      distanceKm: 0.9,
+      baseTimeMin: 3,
+      path: [[19.083, 72.895], [19.081, 72.898], [19.079, 72.9]],
+    },
+    {
+      id: "R_LINK_3",
+      name: "Port Elevated Corridor",
+      state: "congested",
+      startNode: "N_S3",
+      endNode: "N_SH04",
+      distanceKm: 5.6,
+      baseTimeMin: 19,
+      path: [[19.062, 72.848], [19.078, 72.858], [19.095, 72.864], [19.104, 72.87]],
+    },
+  ];
+
+  const evacuationRoutes: EvacuationRoute[] = [
+    {
+      id: "EVR-A",
+      label: "Route A · Sector 7 → SH-01",
+      originSector: "Sector 7",
+      destinationShelterId: "SH-01",
+      distanceKm: 2.4,
+      travelTimeMin: 26,
+      hazardExposureScore: 1.4,
+      path: [[19.092, 72.862], [19.089, 72.868], [19.088, 72.874]],
+      diversionsCount: 1,
+      algorithm: "Dijkstra",
+      segments: ["R_LINK_1"],
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      id: "EVR-B",
+      label: "Route B · Sector 3 → SH-04",
+      originSector: "Sector 3",
+      destinationShelterId: "SH-04",
+      distanceKm: 5.6,
+      travelTimeMin: 58,
+      hazardExposureScore: 3.2,
+      path: [[19.062, 72.848], [19.078, 72.858], [19.095, 72.864], [19.104, 72.87]],
+      diversionsCount: 2,
+      algorithm: "Dijkstra",
+      segments: ["R_LINK_3"],
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      id: "EVR-C",
+      label: "Route C · Sector 12 → SH-03",
+      originSector: "Sector 12",
+      destinationShelterId: "SH-03",
+      distanceKm: 1.1,
+      travelTimeMin: 14,
+      hazardExposureScore: 0.2,
+      path: [[19.083, 72.895], [19.081, 72.898], [19.079, 72.9]],
+      diversionsCount: 0,
+      algorithm: "Dijkstra",
+      segments: ["R_LINK_2"],
+      updatedAt: new Date().toISOString(),
+    },
+  ];
+
+  const citizenProfiles: CitizenProfile[] = [
+    {
+      id: "CIT-01",
+      userId: "USR-CITIZEN-1",
+      fullName: "S. Iyer",
+      sector: "Sector 7 · Riverside",
+      evacuationOrder: "MANDATORY",
+      assignedShelterId: "SH-01",
+      distanceKm: 2.4,
+      etaMinutes: 26,
+      bloodGroup: "O+",
+      conditions: "Asthma",
+      medication: "Salbutamol inhaler",
+      emergencyContact: "+91 98200 12420",
+      checklist: [
+        { item: "Identity documents & cash", checked: true },
+        { item: "3 days of medication", checked: true },
+        { item: "Drinking water (4 L per person)", checked: true },
+        { item: "Torch, power bank, whistle", checked: false },
+        { item: "Mains power and gas switched off", checked: false },
+      ],
+      family: [
+        { id: "FAM-1", name: "Meera Iyer", status: "At shelter SH-01", tone: "success", lastReported: new Date().toISOString() },
+        { id: "FAM-2", name: "Rohan Iyer", status: "En route · Route A", tone: "warning", lastReported: new Date().toISOString() },
+        { id: "FAM-3", name: "Kamala Iyer", status: "Unreachable · 22 min", tone: "critical", lastReported: new Date(Date.now() - 1320000).toISOString() },
+      ],
+      connectivityStatus: "ONLINE",
+    },
+  ];
+
+  const volunteers: Volunteer[] = [
+    { id: "VOL-1", shelterId: "SH-01", name: "R. Nair", role: "Intake desk", shift: "20:00–04:00", tone: "success", available: true },
+    { id: "VOL-2", shelterId: "SH-01", name: "P. Sharma", role: "Medical support", shift: "22:00–06:00", tone: "success", available: true },
+    { id: "VOL-3", shelterId: "SH-01", name: "J. Fernandes", role: "Kitchen", shift: "unassigned", tone: "warning", available: false },
+    { id: "VOL-4", shelterId: "SH-01", name: "A. Khan", role: "Logistics", shift: "16:00–00:00", tone: "info", available: true },
+  ];
+
+  const supplyRequests: SupplyRequest[] = [
+    {
+      id: "REQ-101",
+      shelterId: "SH-01",
+      resource: "Drinking water (L)",
+      quantity: 2000,
+      urgency: "Critical (< 2 h)",
+      status: "APPROVED",
+      submittedBy: "SH-01 Admin",
+      approvedBy: "OPS-1",
+      notes: "High intake pressure expected from Sector 7 breach.",
+      createdAt: new Date(Date.now() - 1800000).toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+  ];
+
+  db.state = {
+    users,
+    incidents,
+    hazards,
+    shelters,
+    evacuees: [],
+    volunteers,
+    supplyRequests,
+    rescueTeams,
+    rescueMissions,
+    victims,
+    hospitals,
+    triageCases,
+    ambulances,
+    bloodInventory,
+    roadNodes,
+    roadEdges,
+    evacuationRoutes,
+    citizenProfiles,
+    sosRequests: [],
+    auditLogs: [],
+  };
+
+  db.saveToFile();
+  console.log(`[Seed] Seed complete! Seeded ${users.length} users, ${incidents.length} incidents, ${shelters.length} shelters, ${hospitals.length} hospitals, and ${roadEdges.length} road edges.`);
+}

@@ -1,6 +1,9 @@
+import { useEffect, useState, useCallback } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Ambulance, BedDouble, Droplet, HeartPulse } from "lucide-react";
+import { Ambulance, BedDouble, Droplet, HeartPulse, Loader2, CheckCircle2, UserPlus, AlertCircle } from "lucide-react";
 import { Bar, MetricCard, PageHeading, Panel, PanelHeader, StatusPill } from "@/components/sdrep/primitives";
+import { api } from "@/lib/api-client";
+import { useAuth } from "@/lib/auth-context";
 
 export const Route = createFileRoute("/portal/hospital")({
   head: () => ({
@@ -14,58 +17,224 @@ export const Route = createFileRoute("/portal/hospital")({
   component: HospitalPortal,
 });
 
-const arrivals = [
-  { unit: "AMB-14", eta: "3 min", triage: "Red", cases: 1, tone: "critical" as const },
-  { unit: "AMB-07", eta: "9 min", triage: "Yellow", cases: 3, tone: "warning" as const },
-  { unit: "HELI-2", eta: "12 min", triage: "Red", cases: 2, tone: "critical" as const },
-  { unit: "AMB-22", eta: "21 min", triage: "Green", cases: 5, tone: "success" as const },
-];
-
-const triageQueue = [
-  { id: "C-8841", tag: "Red", desc: "Crush injury, hypotensive", wait: "0 min" },
-  { id: "C-8840", tag: "Red", desc: "Smoke inhalation, intubated", wait: "4 min" },
-  { id: "C-8836", tag: "Yellow", desc: "Open tibia fracture", wait: "18 min" },
-  { id: "C-8829", tag: "Yellow", desc: "Hypothermia, elderly", wait: "26 min" },
-  { id: "C-8817", tag: "Green", desc: "Lacerations, ambulatory", wait: "51 min" },
-];
-
-const blood = [
-  { group: "O-", units: 12, min: 20 },
-  { group: "O+", units: 64, min: 40 },
-  { group: "A+", units: 38, min: 30 },
-  { group: "B+", units: 27, min: 30 },
-];
-
 function HospitalPortal() {
+  const { user } = useAuth();
+  const hospitalId = user?.associatedEntityId || "HSP-1";
+
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  // New Casualty Triage Intake form
+  const [showTriageForm, setShowTriageForm] = useState(false);
+  const [tag, setTag] = useState("Red");
+  const [presentation, setPresentation] = useState("");
+
+  const fetchHospital = useCallback(async () => {
+    try {
+      const res = await api.hospital.getDetails(hospitalId);
+      if (res.data) {
+        setData(res.data);
+      }
+    } catch (err) {
+      console.error("Failed to load hospital operations:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [hospitalId]);
+
+  useEffect(() => {
+    fetchHospital();
+  }, [fetchHospital]);
+
+  const handleToggleDiversion = async () => {
+    setSubmitting(true);
+    try {
+      const isCurrentlyDiverting = Boolean(data?.diversion);
+      const res = await api.hospital.declareDiversion(hospitalId, !isCurrentlyDiverting, "Surge capacity threshold protocol");
+      setFeedback(res.message);
+      await fetchHospital();
+      setTimeout(() => setFeedback(null), 8000);
+    } catch (err: any) {
+      alert(err.message || "Failed to update diversion status.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleTriageSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!presentation.trim()) return;
+
+    setSubmitting(true);
+    try {
+      const res = await api.hospital.addTriageCase(hospitalId, {
+        tag,
+        desc: presentation.trim(),
+      });
+      setFeedback(res.message);
+      setPresentation("");
+      setShowTriageForm(false);
+      await fetchHospital();
+    } catch (err: any) {
+      alert(err.message || "Failed to register triage casualty.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex h-64 items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="size-5 animate-spin" />
+        Loading clinical surge and casualty intake registry…
+      </div>
+    );
+  }
+
+  const triageQueue = data?.triageQueue || [];
+  const arrivals = data?.ambulances || [];
+  const blood = data?.blood || [];
+  const isDiverting = Boolean(data?.diversion);
+
   return (
     <div className="space-y-4">
       <PageHeading
-        eyebrow="HSP-1 · City General Hospital"
+        eyebrow={`${data?.id || hospitalId} · ${data?.name || "Hospital"}`}
         title="Casualty intake"
-        description="Mass casualty protocol active. Emergency department at 88% triage load."
-        actions={<button className="flex items-center gap-2 rounded-md bg-critical px-3 py-2 text-xs font-semibold text-critical-foreground"><HeartPulse className="size-3.5" /> Declare diversion</button>}
+        description={
+          isDiverting
+            ? "⚠️ HOSPITAL DIVERSION ACTIVE. Inbound emergency traffic redirected to auxiliary trauma centres."
+            : `Mass casualty protocol active. Emergency department at ${data?.triageLoad || 88}% triage load.`
+        }
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowTriageForm(!showTriageForm)}
+              className="flex items-center gap-2 rounded-md bg-secondary px-3 py-2 text-xs font-semibold text-secondary-foreground hover:bg-secondary/80"
+            >
+              <UserPlus className="size-3.5" /> Intake casualty
+            </button>
+            <button
+              onClick={handleToggleDiversion}
+              disabled={submitting}
+              className={`flex items-center gap-2 rounded-md px-3 py-2 text-xs font-semibold text-white transition-colors ${
+                isDiverting ? "bg-success hover:bg-success/90" : "bg-critical hover:bg-critical/90"
+              }`}
+            >
+              <HeartPulse className="size-3.5" />
+              {isDiverting ? "Lift diversion" : "Declare diversion"}
+            </button>
+          </div>
+        }
       />
 
+      {feedback && (
+        <div className="flex items-center gap-2 rounded-md border border-success/30 bg-success/10 px-4 py-3 text-xs text-success">
+          <CheckCircle2 className="size-4 shrink-0" />
+          <span>{feedback}</span>
+        </div>
+      )}
+
+      {showTriageForm && (
+        <Panel className="border-accent">
+          <PanelHeader title="Intake casualty to triage queue" icon={<UserPlus className="size-4 text-accent" />} />
+          <form className="grid gap-3 p-4 sm:grid-cols-3" onSubmit={handleTriageSubmit}>
+            <div>
+              <label className="block text-xs text-muted-foreground" htmlFor="ttag">Triage tag</label>
+              <select
+                id="ttag"
+                value={tag}
+                onChange={(e) => setTag(e.target.value)}
+                className="mt-1 w-full rounded-md border border-input bg-surface-2 px-3 py-2 text-sm"
+              >
+                <option value="Red">Red · Immediate / Resuscitation</option>
+                <option value="Yellow">Yellow · Delayed / Urgent</option>
+                <option value="Green">Green · Minimal / Ambulatory</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-muted-foreground" htmlFor="pdesc">Clinical presentation</label>
+              <input
+                id="pdesc"
+                required
+                value={presentation}
+                onChange={(e) => setPresentation(e.target.value)}
+                placeholder="e.g. Blunt abdominal trauma, tachycardic"
+                className="mt-1 w-full rounded-md border border-input bg-surface-2 px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="flex items-end">
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-foreground hover:bg-accent/90 disabled:opacity-50"
+              >
+                {submitting ? "Admitting…" : "Admit to queue"}
+              </button>
+            </div>
+          </form>
+        </Panel>
+      )}
+
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <MetricCard label="Beds free" value="72" unit="/640" tone="warning" icon={<BedDouble className="size-4" />} />
-        <MetricCard label="ICU free" value="5" unit="/48" tone="critical" icon={<HeartPulse className="size-4" />} />
-        <MetricCard label="Inbound casualties" value="11" tone="critical" icon={<Ambulance className="size-4" />} hint="next 25 min" />
-        <MetricCard label="Blood below minimum" value="1" tone="warning" icon={<Droplet className="size-4" />} hint="O-negative" />
+        <MetricCard
+          label="Beds free"
+          value={String(data?.bedsFree || "72")}
+          unit={`/${data?.beds || 640}`}
+          tone={data?.bedsFree < 30 ? "critical" : "warning"}
+          icon={<BedDouble className="size-4" />}
+        />
+        <MetricCard
+          label="ICU free"
+          value={String(data?.icuFree || "5")}
+          unit={`/${data?.icu || 48}`}
+          tone="critical"
+          icon={<HeartPulse className="size-4" />}
+        />
+        <MetricCard
+          label="Inbound casualties"
+          value={String(data?.incoming || "11")}
+          tone="critical"
+          icon={<Ambulance className="size-4" />}
+          hint="next 25 min"
+        />
+        <MetricCard
+          label="Blood below minimum"
+          value={String(blood.filter((b: any) => b.units < b.min).length || "1")}
+          tone="warning"
+          icon={<Droplet className="size-4" />}
+          hint="O-negative alert"
+        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <Panel>
-          <PanelHeader title="Triage queue" meta="live" />
+          <PanelHeader title="Triage queue" meta="prioritized by clinical urgency" />
           <div className="overflow-x-auto">
             <table className="w-full min-w-[520px] text-sm">
-              <thead><tr className="border-b border-border text-left">{["Case", "Tag", "Presentation", "Waiting"].map((h) => <th key={h} className="label-eyebrow px-4 py-2 font-normal">{h}</th>)}</tr></thead>
+              <thead>
+                <tr className="border-b border-border text-left">
+                  {["Case", "Tag", "Presentation", "Waiting"].map((h) => (
+                    <th key={h} className="label-eyebrow px-4 py-2 font-normal">{h}</th>
+                  ))}
+                </tr>
+              </thead>
               <tbody className="divide-y divide-border">
-                {triageQueue.map((c) => (
+                {triageQueue.map((c: any) => (
                   <tr key={c.id} className="hover:bg-surface-2">
                     <td className="num px-4 py-2.5 text-muted-foreground">{c.id}</td>
-                    <td className="px-4 py-2.5"><StatusPill tone={c.tag === "Red" ? "critical" : c.tag === "Yellow" ? "warning" : "success"} pulse={c.tag === "Red"}>{c.tag}</StatusPill></td>
-                    <td className="px-4 py-2.5">{c.desc}</td>
-                    <td className="num px-4 py-2.5">{c.wait}</td>
+                    <td className="px-4 py-2.5">
+                      <StatusPill
+                        tone={c.tag === "Red" ? "critical" : c.tag === "Yellow" ? "warning" : "success"}
+                        pulse={c.tag === "Red"}
+                      >
+                        {c.tag}
+                      </StatusPill>
+                    </td>
+                    <td className="px-4 py-2.5">{c.presentation || c.desc}</td>
+                    <td className="num px-4 py-2.5">{c.wait || c.wait_time}</td>
                   </tr>
                 ))}
               </tbody>
@@ -77,10 +246,15 @@ function HospitalPortal() {
           <Panel>
             <PanelHeader title="Ambulance arrivals" icon={<Ambulance className="size-4" />} />
             <ul className="divide-y divide-border">
-              {arrivals.map((a) => (
-                <li key={a.unit} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-4 py-3">
-                  <div className="min-w-0"><p className="num text-sm font-semibold">{a.unit}</p><p className="text-[11px] text-muted-foreground">{a.cases} casualties · ETA {a.eta}</p></div>
-                  <StatusPill tone={a.tone} pulse={a.tone === "critical"}>{a.triage}</StatusPill>
+              {arrivals.map((a: any) => (
+                <li key={a.id || a.unit} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="num text-sm font-semibold">{a.unit}</p>
+                    <p className="text-[11px] text-muted-foreground">{a.cases} casualties · ETA {a.eta}</p>
+                  </div>
+                  <StatusPill tone={a.tone || (a.triage === "Red" ? "critical" : "warning")} pulse={a.triage === "Red"}>
+                    {a.triage}
+                  </StatusPill>
                 </li>
               ))}
             </ul>
@@ -89,10 +263,18 @@ function HospitalPortal() {
           <Panel>
             <PanelHeader title="Blood inventory" icon={<Droplet className="size-4" />} />
             <ul className="space-y-3 p-4">
-              {blood.map((b) => (
-                <li key={b.group}>
-                  <p className="flex justify-between text-xs"><span className="num font-semibold">{b.group}</span><span className={`num ${b.units < b.min ? "text-critical" : "text-muted-foreground"}`}>{b.units} units</span></p>
-                  <div className="mt-1.5"><Bar value={(b.units / (b.min * 2)) * 100} tone={b.units < b.min ? "critical" : "success"} /></div>
+              {blood.map((b: any) => (
+                <li key={b.group || b.blood_group}>
+                  <p className="flex justify-between text-xs">
+                    <span className="num font-semibold">{b.group || b.blood_group}</span>
+                    <span className={`num ${b.units < b.min ? "text-critical" : "text-muted-foreground"}`}>{b.units} units</span>
+                  </p>
+                  <div className="mt-1.5">
+                    <Bar
+                      value={(b.units / ((b.min || b.min_threshold) * 2)) * 100}
+                      tone={b.units < (b.min || b.min_threshold) ? "critical" : "success"}
+                    />
+                  </div>
                 </li>
               ))}
             </ul>

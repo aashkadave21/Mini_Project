@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sdrep_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sdrep_user
+      POSTGRES_PASSWORD: sdrep_secure_pass
+      POSTGRES_DB: sdrep_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./server/src/db/schema.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+volumes:
+  pgdata:
