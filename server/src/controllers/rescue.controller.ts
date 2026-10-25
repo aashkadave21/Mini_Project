@@ -166,7 +166,8 @@ export async function updateMissionStatus(req: AuthenticatedRequest, res: Respon
 }
 
 export async function submitIncidentReport(req: AuthenticatedRequest, res: Response): Promise<void> {
-  const { incidentId, observation } = req.body;
+  const incidentId = req.body.incidentId || req.params.id;
+  const { observation } = req.body;
 
   if (!incidentId || !observation) {
     res.status(400).json({ success: false, error: "ValidationError", message: "Incident ID and field observation are required." });
@@ -233,3 +234,70 @@ export async function autoAllocateMissions(req: AuthenticatedRequest, res: Respo
     data: decisions,
   });
 }
+
+export async function updateTeamStatus(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { id } = req.params;
+  const { status, fuel } = req.body;
+
+  const validStatuses = ["available", "en-route", "on-scene", "returning", "offline"];
+  if (status && !validStatuses.includes(status)) {
+    res.status(400).json({ success: false, error: "ValidationError", message: `Valid statuses: ${validStatuses.join(", ")}` });
+    return;
+  }
+
+  const team = db.state.rescueTeams.find((t) => t.id === id);
+  if (!team) {
+    res.status(404).json({ success: false, message: `Rescue team ${id} not found.` });
+    return;
+  }
+
+  await db.withTransaction(async (state) => {
+    const idx = state.rescueTeams.findIndex((t) => t.id === id);
+    if (idx !== -1) {
+      if (status) state.rescueTeams[idx]!.status = status;
+      if (fuel !== undefined) state.rescueTeams[idx]!.fuel = Math.min(100, Math.max(0, Number(fuel)));
+      state.rescueTeams[idx]!.updatedAt = new Date().toISOString();
+    }
+  });
+
+  await db.logAudit(req.user?.username || "RESCUE_TEAM", req.user?.role || "RESCUE_TEAM", "UPDATE_TEAM_STATUS", id!, {
+    status,
+    fuel,
+  });
+
+  res.json({
+    success: true,
+    message: `Team ${team.callsign} status updated to ${status || team.status}.`,
+    data: db.state.rescueTeams.find((t) => t.id === id),
+  });
+}
+
+export async function getMissionReports(_req: AuthenticatedRequest, res: Response): Promise<void> {
+  // Aggregate field reports from audit logs and completed missions
+  const fieldReports = db.state.auditLogs
+    .filter((a) => a.action === "SUBMIT_FIELD_REPORT")
+    .map((a) => ({
+      id: a.id,
+      incidentId: a.target,
+      reporter: a.actor,
+      observation: (a.details?.observation as string) || "Field observation recorded.",
+      timestamp: a.timestamp,
+    }));
+
+  const completedMissionReports = db.state.rescueMissions
+    .filter((m) => m.status === "COMPLETED" && m.outcomeReport)
+    .map((m) => ({
+      id: `OUTCOME-${m.id}`,
+      incidentId: m.incidentId,
+      reporter: m.assignedTeamId || "Rescue Team",
+      observation: m.outcomeReport || "Mission completed successfully.",
+      timestamp: m.completedAt || m.createdAt,
+    }));
+
+  const combined = [...fieldReports, ...completedMissionReports].sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  );
+
+  res.json({ success: true, data: combined });
+}
+

@@ -19,10 +19,10 @@ export const Route = createFileRoute("/")({
 });
 
 const portals = [
-  { to: "/portal/citizen", icon: User, title: "Citizen portal", desc: "Alerts, assigned shelter, live route, SOS and family tracking." },
-  { to: "/portal/rescue", icon: Siren, title: "Rescue team portal", desc: "Missions, victim queue, navigation, equipment and reporting." },
-  { to: "/portal/shelter", icon: Building2, title: "Shelter administrator", desc: "Occupancy, intake, inventory, supply requests and volunteers." },
-  { to: "/portal/hospital", icon: Hospital, title: "Hospital portal", desc: "Casualty intake, triage, bed and ICU capacity, blood stock." },
+  { to: "/portal/citizen/login", icon: User, title: "Citizen Portal", desc: "Alerts, assigned shelter, safe evacuation route, family tracking, and SOS." },
+  { to: "/portal/rescue/login", icon: Siren, title: "Rescue Team Portal", desc: "Assigned missions, victim queue, field navigation, equipment, and reports." },
+  { to: "/portal/shelter/login", icon: Building2, title: "Shelter Administrator", desc: "Camp capacity, evacuee registration, inventory, supplies, and volunteers." },
+  { to: "/portal/hospital/login", icon: Hospital, title: "Hospital Portal", desc: "Casualty intake, clinical triage, ICU bed capacity, and blood bank." },
 ] as const;
 
 function Landing() {

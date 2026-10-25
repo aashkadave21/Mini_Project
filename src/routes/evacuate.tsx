@@ -26,6 +26,7 @@ function EvacuatePage() {
   const [loadingRoute, setLoadingRoute] = useState(false);
   const [computedRoute, setComputedRoute] = useState<any>(null);
   const [sheltersList, setSheltersList] = useState<any[]>([]);
+  const [routeError, setRouteError] = useState<string | null>(null);
 
   useEffect(() => {
     // Load active shelters from API
@@ -42,6 +43,7 @@ function EvacuatePage() {
   const handleComputeRoute = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoadingRoute(true);
+    setRouteError(null);
 
     try {
       let startNode = "N_S7";
@@ -60,7 +62,7 @@ function EvacuatePage() {
         setComputedRoute(res.data);
       }
     } catch (err: any) {
-      alert("Failed to compute disaster routing. Please proceed along main marked diversion signs.");
+      setRouteError("Unable to calculate real-time routing from the server. Please follow main arterial diversion signs to your nearest designated shelter.");
     } finally {
       setLoadingRoute(false);
     }
@@ -87,6 +89,11 @@ function EvacuatePage() {
           <Panel>
             <PanelHeader title="Request evacuation guidance" icon={<Navigation className="size-4" />} />
             <form className="space-y-3 p-4" onSubmit={handleComputeRoute}>
+              {routeError && (
+                <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300">
+                  {routeError}
+                </div>
+              )}
               <div>
                 <label htmlFor="loc" className="block text-xs text-muted-foreground">Your location or sector</label>
                 <input

@@ -57,7 +57,16 @@ interface AuthContextType {
   user: UserSession | null;
   token: string | null;
   isLoading: boolean;
-  login: (credentials: { username: string; password: string }) => Promise<UserSession>;
+  login: (credentials: { username: string; password: string; expectedRole?: string; rememberMe?: boolean }) => Promise<UserSession>;
+  registerCitizen: (payload: {
+    fullName: string;
+    email?: string;
+    mobile?: string;
+    password: string;
+    sector?: string;
+    conditions?: string;
+    emergencyContact?: string;
+  }) => Promise<UserSession>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<UserSession | null>;
 }
@@ -117,12 +126,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkAuth();
   }, []);
 
-  const login = async (credentials: { username: string; password: string }): Promise<UserSession> => {
+  const login = async (credentials: {
+    username: string;
+    password: string;
+    expectedRole?: string;
+    rememberMe?: boolean;
+  }): Promise<UserSession> => {
     setIsLoading(true);
     try {
       const res = await api.auth.login(credentials);
       if (!res.token || !res.user) {
         throw new Error(res.message || "Authentication failed. No token returned.");
+      }
+
+      localStorage.setItem("sdrep_token", res.token);
+      localStorage.setItem("sdrep_user", JSON.stringify(res.user));
+      setToken(res.token);
+      setUser(res.user);
+      return res.user;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const registerCitizen = async (payload: {
+    fullName: string;
+    email?: string;
+    mobile?: string;
+    password: string;
+    sector?: string;
+    conditions?: string;
+    emergencyContact?: string;
+  }): Promise<UserSession> => {
+    setIsLoading(true);
+    try {
+      const res = await api.auth.registerCitizen(payload);
+      if (!res.token || !res.user) {
+        throw new Error(res.message || "Registration failed.");
       }
 
       localStorage.setItem("sdrep_token", res.token);
@@ -149,7 +189,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, logout, checkAuth }}>
+    <AuthContext.Provider value={{ user, token, isLoading, login, registerCitizen, logout, checkAuth }}>
       {children}
     </AuthContext.Provider>
   );

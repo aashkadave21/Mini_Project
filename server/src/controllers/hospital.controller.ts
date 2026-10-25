@@ -139,3 +139,109 @@ export async function registerAmbulanceArrival(req: AuthenticatedRequest, res: R
 
   res.status(201).json({ success: true, data: newArrival });
 }
+
+export async function updateTriageStatus(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { id, caseId } = req.params;
+  const { status, tag } = req.body;
+
+  const validStatuses = ["WAITING", "IN_TREATMENT", "DISCHARGED", "TRANSFERRED"];
+  if (status && !validStatuses.includes(status)) {
+    res.status(400).json({ success: false, error: "ValidationError", message: `Valid statuses: ${validStatuses.join(", ")}` });
+    return;
+  }
+
+  const triageCase = db.state.triageCases.find((c) => c.id === caseId && c.hospitalId === id);
+  if (!triageCase) {
+    res.status(404).json({ success: false, message: `Triage case ${caseId} not found.` });
+    return;
+  }
+
+  await db.withTransaction(async (state) => {
+    const idx = state.triageCases.findIndex((c) => c.id === caseId && c.hospitalId === id);
+    if (idx !== -1) {
+      const prevStatus = state.triageCases[idx]!.status;
+      if (status) state.triageCases[idx]!.status = status;
+      if (tag) state.triageCases[idx]!.tag = tag;
+
+      // If released or transferred, free up bed
+      if ((status === "DISCHARGED" || status === "TRANSFERRED") && prevStatus !== "DISCHARGED" && prevStatus !== "TRANSFERRED") {
+        const hIdx = state.hospitals.findIndex((h) => h.id === id);
+        if (hIdx !== -1) {
+          state.hospitals[hIdx]!.bedsFree = Math.min(state.hospitals[hIdx]!.beds, state.hospitals[hIdx]!.bedsFree + 1);
+        }
+      }
+    }
+  });
+
+  await db.logAudit(req.user?.username || "TRIAGE_DESK", req.user?.role || "HOSPITAL_STAFF", "UPDATE_TRIAGE_STATUS", caseId!, {
+    hospitalId: id,
+    status,
+    tag,
+  });
+
+  res.json({
+    success: true,
+    message: `Case ${caseId} updated: status=${status || triageCase.status}, tag=${tag || triageCase.tag}.`,
+    data: db.state.triageCases.find((c) => c.id === caseId),
+  });
+}
+
+export async function confirmAmbulanceArrival(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { id, ambId } = req.params;
+
+  const ambulance = db.state.ambulances.find((a) => a.id === ambId && a.hospitalId === id);
+  if (!ambulance) {
+    res.status(404).json({ success: false, message: `Ambulance record ${ambId} not found.` });
+    return;
+  }
+
+  await db.withTransaction(async (state) => {
+    const idx = state.ambulances.findIndex((a) => a.id === ambId && a.hospitalId === id);
+    if (idx !== -1) {
+      state.ambulances[idx]!.arrived = true;
+      state.ambulances[idx]!.eta = "On-site / Handed off";
+      const hIdx = state.hospitals.findIndex((h) => h.id === id);
+      if (hIdx !== -1) {
+        state.hospitals[hIdx]!.incoming = Math.max(0, state.hospitals[hIdx]!.incoming - state.ambulances[idx]!.cases);
+      }
+    }
+  });
+
+  await db.logAudit(req.user?.username || "ED_TRIAGE", req.user?.role || "HOSPITAL_STAFF", "AMBULANCE_ARRIVED", ambId!, {
+    hospitalId: id,
+    unit: ambulance.unit,
+  });
+
+  res.json({
+    success: true,
+    message: `Ambulance ${ambulance.unit} intake confirmed. Casualties received at Emergency Department.`,
+    data: db.state.ambulances.find((a) => a.id === ambId),
+  });
+}
+
+export async function updateBloodStock(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { group, units } = req.body;
+
+  if (!group || units === undefined) {
+    res.status(400).json({ success: false, error: "ValidationError", message: "Blood group and units are required." });
+    return;
+  }
+
+  await db.withTransaction(async (state) => {
+    const stock = state.bloodInventory.find((b) => b.group === group);
+    if (stock) {
+      stock.units = Math.max(0, Number(units));
+    }
+  });
+
+  await db.logAudit(req.user?.username || "BLOOD_BANK", req.user?.role || "HOSPITAL_STAFF", "UPDATE_BLOOD_STOCK", group, {
+    units,
+  });
+
+  res.json({
+    success: true,
+    message: `Blood bank updated: group ${group} now has ${units} units available.`,
+    data: db.state.bloodInventory,
+  });
+}
+

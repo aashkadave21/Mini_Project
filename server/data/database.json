@@ -59,14 +59,14 @@
       "sector": "Sector 7 · Riverside",
       "reported": "00:04",
       "victims": 128,
-      "status": "dispatched",
+      "status": "resolved",
       "pos": [
         19.092,
         72.862
       ],
       "description": "Floodwaters exceeding 2.1m following embankment collapse near river turn.",
       "createdAt": "2026-10-19T05:35:20.506Z",
-      "updatedAt": "2026-10-19T06:35:20.506Z"
+      "updatedAt": "2026-10-25T03:59:22.535Z"
     },
     {
       "id": "INC-4468",
@@ -211,8 +211,8 @@
       "id": "SH-01",
       "name": "Municipal Stadium Relief Camp",
       "capacity": 2400,
-      "occupancy": 1880,
-      "incoming": 220,
+      "occupancy": 1881,
+      "incoming": 219,
       "medical": true,
       "status": "near-full",
       "pos": [
@@ -224,7 +224,7 @@
       "blanketsStock": 1720,
       "medicalKitsStock": 46,
       "sanitationStock": 310,
-      "lastUpdated": "2026-10-19T06:35:20.506Z"
+      "lastUpdated": "2026-10-25T04:43:06.110Z"
     },
     {
       "id": "SH-02",
@@ -312,6 +312,16 @@
       "originSector": "Sector 7",
       "mobilityNeeds": "On foot",
       "registeredAt": "2026-10-19T06:35:20.597Z"
+    },
+    {
+      "id": "EVAC-1792903386110-534",
+      "shelterId": "SH-01",
+      "fullName": "dd",
+      "familyCount": 1,
+      "originSector": "Sector 7 · Riverside",
+      "mobilityNeeds": "On foot",
+      "specialNeeds": "1111111111111",
+      "registeredAt": "2026-10-25T04:43:06.110Z"
     }
   ],
   "volunteers": [
@@ -350,6 +360,15 @@
       "shift": "16:00–00:00",
       "tone": "info",
       "available": true
+    },
+    {
+      "id": "VOL-1792902305369",
+      "shelterId": "SH-01",
+      "name": "mm",
+      "role": "Intake desk",
+      "shift": "20:00–04:00",
+      "tone": "success",
+      "available": true
     }
   ],
   "supplyRequests": [
@@ -373,15 +392,15 @@
       "callsign": "ALPHA-1",
       "unit": "NDRF Water Rescue",
       "members": 8,
-      "status": "on-scene",
-      "mission": "INC-4471",
+      "status": "available",
+      "mission": null,
       "fuel": 62,
       "eta": "—",
       "pos": [
         19.09,
         72.864
       ],
-      "updatedAt": "2026-10-19T06:35:20.507Z"
+      "updatedAt": "2026-10-25T05:34:12.970Z"
     },
     {
       "id": "T2",
@@ -464,7 +483,7 @@
       "id": "MIS-4471",
       "incidentId": "INC-4471",
       "assignedTeamId": "T1",
-      "status": "ON_SCENE",
+      "status": "EN_ROUTE",
       "victimsCount": 128,
       "triageSummary": {
         "red": 14,
@@ -472,7 +491,9 @@
         "green": 76
       },
       "notes": "Water depth 2.2m. Deploying 2 Gemini boats for sector clearance.",
-      "createdAt": "2026-10-19T06:35:20.507Z"
+      "createdAt": "2026-10-19T06:35:20.507Z",
+      "outcomeReport": "Mission status updated to EN_ROUTE by field unit.",
+      "completedAt": "2026-10-25T03:59:22.535Z"
     },
     {
       "id": "MIS-4468",
@@ -549,7 +570,7 @@
       "bedsFree": 72,
       "icu": 48,
       "icuFree": 5,
-      "incoming": 14,
+      "incoming": 13,
       "triageLoad": 88,
       "diversion": false,
       "pos": [
@@ -643,11 +664,11 @@
       "id": "AMB-14",
       "hospitalId": "HSP-1",
       "unit": "AMB-14",
-      "eta": "3 min",
+      "eta": "On-site / Handed off",
       "triage": "Red",
       "cases": 1,
       "tone": "critical",
-      "arrived": false
+      "arrived": true
     },
     {
       "id": "AMB-07",
@@ -683,7 +704,7 @@
   "bloodInventory": [
     {
       "group": "O-",
-      "units": 12,
+      "units": 17,
       "min": 20
     },
     {
@@ -962,29 +983,29 @@
       "label": "Route A · Sector 7 → SH-01",
       "originSector": "Sector 7",
       "destinationShelterId": "SH-01",
-      "distanceKm": 2.4,
-      "travelTimeMin": 26,
-      "hazardExposureScore": 1.4,
+      "distanceKm": 2.1,
+      "travelTimeMin": 12,
+      "hazardExposureScore": 1.5,
       "path": [
         [
-          19.092,
-          72.862
+          19.098,
+          72.856
         ],
         [
-          19.089,
-          72.868
+          19.09,
+          72.866
         ],
         [
-          19.088,
-          72.874
+          19.083,
+          72.872
         ]
       ],
       "diversionsCount": 1,
       "algorithm": "Dijkstra",
       "segments": [
-        "R_LINK_1"
+        "R1"
       ],
-      "updatedAt": "2026-10-19T06:35:20.507Z"
+      "updatedAt": "2026-10-25T05:37:49.127Z"
     },
     {
       "id": "EVR-B",
@@ -992,8 +1013,8 @@
       "originSector": "Sector 3",
       "destinationShelterId": "SH-04",
       "distanceKm": 5.6,
-      "travelTimeMin": 58,
-      "hazardExposureScore": 3.2,
+      "travelTimeMin": 29,
+      "hazardExposureScore": 0,
       "path": [
         [
           19.062,
@@ -1017,16 +1038,16 @@
       "segments": [
         "R_LINK_3"
       ],
-      "updatedAt": "2026-10-19T06:35:20.507Z"
+      "updatedAt": "2026-10-25T05:37:49.127Z"
     },
     {
       "id": "EVR-C",
       "label": "Route C · Sector 12 → SH-03",
       "originSector": "Sector 12",
       "destinationShelterId": "SH-03",
-      "distanceKm": 1.1,
-      "travelTimeMin": 14,
-      "hazardExposureScore": 0.2,
+      "distanceKm": 0.9,
+      "travelTimeMin": 5,
+      "hazardExposureScore": 0,
       "path": [
         [
           19.083,
@@ -1046,7 +1067,7 @@
       "segments": [
         "R_LINK_2"
       ],
-      "updatedAt": "2026-10-19T06:35:20.507Z"
+      "updatedAt": "2026-10-25T05:37:49.127Z"
     }
   ],
   "citizenProfiles": [
@@ -1106,12 +1127,67 @@
           "status": "Unreachable · 22 min",
           "tone": "critical",
           "lastReported": "2026-10-19T06:13:20.507Z"
+        },
+        {
+          "id": "FAM-1792903922713",
+          "name": "aashka",
+          "status": "college",
+          "tone": "success",
+          "lastReported": "2026-10-25T04:52:02.713Z"
         }
       ],
       "connectivityStatus": "ONLINE"
     }
   ],
   "sosRequests": [
+    {
+      "id": "SOS-6367",
+      "citizenId": "CIT-01",
+      "senderName": "citizen",
+      "sector": "Sector 7 · Riverside",
+      "pos": [
+        19.092,
+        72.862
+      ],
+      "headcount": 1,
+      "medicalUrgency": true,
+      "notes": "Medical evacuation needed: oxygen/inhaler depleted",
+      "status": "RECEIVED",
+      "createdAt": "2026-10-25T04:51:43.330Z",
+      "assignedTeamId": "T4"
+    },
+    {
+      "id": "SOS-1190",
+      "citizenId": "CIT-01",
+      "senderName": "citizen",
+      "sector": "Sector 7 · Riverside",
+      "pos": [
+        19.092,
+        72.862
+      ],
+      "headcount": 1,
+      "medicalUrgency": true,
+      "notes": "Medical evacuation needed: oxygen/inhaler depleted",
+      "status": "RECEIVED",
+      "createdAt": "2026-10-25T03:49:51.897Z",
+      "assignedTeamId": "T4"
+    },
+    {
+      "id": "SOS-4000",
+      "citizenId": "ANONYMOUS",
+      "senderName": "Anonymous Citizen",
+      "sector": "Sector 7 · Riverside",
+      "pos": [
+        19.092,
+        72.862
+      ],
+      "headcount": 1,
+      "medicalUrgency": true,
+      "notes": "Emergency one-tap SOS triggered from citizen portal.",
+      "status": "RECEIVED",
+      "createdAt": "2026-10-25T03:31:04.511Z",
+      "assignedTeamId": "T4"
+    },
     {
       "id": "SOS-3744",
       "citizenId": "HSP-1",
@@ -1146,6 +1222,396 @@
     }
   ],
   "auditLogs": [
+    {
+      "id": "AUD-1792906669146-7zbu",
+      "timestamp": "2026-10-25T05:37:49.146Z",
+      "actor": "OPERATOR",
+      "role": "OPERATOR",
+      "action": "RECOMPUTE_EVACUATION_ROUTES",
+      "target": "ALL_CORRIDORS"
+    },
+    {
+      "id": "AUD-1792906592175-iy9d",
+      "timestamp": "2026-10-25T05:36:32.175Z",
+      "actor": "HSP-1",
+      "role": "HOSPITAL_STAFF",
+      "action": "USER_LOGOUT",
+      "target": "USR-HOSPITAL-1"
+    },
+    {
+      "id": "AUD-1792906546306-4r8c",
+      "timestamp": "2026-10-25T05:35:46.306Z",
+      "actor": "HSP-1",
+      "role": "HOSPITAL_STAFF",
+      "action": "UPDATE_BLOOD_STOCK",
+      "target": "O-",
+      "details": {
+        "units": 17
+      }
+    },
+    {
+      "id": "AUD-1792906539110-uxdt",
+      "timestamp": "2026-10-25T05:35:39.110Z",
+      "actor": "HSP-1",
+      "role": "HOSPITAL_STAFF",
+      "action": "AMBULANCE_ARRIVED",
+      "target": "AMB-14",
+      "details": {
+        "hospitalId": "HSP-1",
+        "unit": "AMB-14"
+      }
+    },
+    {
+      "id": "AUD-1792906513247-vt2b",
+      "timestamp": "2026-10-25T05:35:13.247Z",
+      "actor": "HSP-1",
+      "role": "HOSPITAL_STAFF",
+      "action": "USER_LOGIN",
+      "target": "USR-HOSPITAL-1",
+      "details": {
+        "ip": "::1",
+        "rememberMe": true,
+        "expectedRole": "HOSPITAL_STAFF"
+      }
+    },
+    {
+      "id": "AUD-1792906507923-sj86",
+      "timestamp": "2026-10-25T05:35:07.923Z",
+      "actor": "HSP-1",
+      "role": "HOSPITAL_STAFF",
+      "action": "USER_LOGIN",
+      "target": "USR-HOSPITAL-1",
+      "details": {
+        "ip": "::1",
+        "rememberMe": true,
+        "expectedRole": "HOSPITAL_STAFF"
+      }
+    },
+    {
+      "id": "AUD-1792906453196-tug8",
+      "timestamp": "2026-10-25T05:34:13.196Z",
+      "actor": "ALPHA-1",
+      "role": "RESCUE_TEAM",
+      "action": "UPDATE_TEAM_STATUS",
+      "target": "T1",
+      "details": {
+        "status": "available"
+      }
+    },
+    {
+      "id": "AUD-1792906449605-ja55",
+      "timestamp": "2026-10-25T05:34:09.605Z",
+      "actor": "ALPHA-1",
+      "role": "RESCUE_TEAM",
+      "action": "UPDATE_TEAM_STATUS",
+      "target": "T1",
+      "details": {
+        "status": "on-scene"
+      }
+    },
+    {
+      "id": "AUD-1792906447776-kkue",
+      "timestamp": "2026-10-25T05:34:07.776Z",
+      "actor": "ALPHA-1",
+      "role": "RESCUE_TEAM",
+      "action": "UPDATE_TEAM_STATUS",
+      "target": "T1",
+      "details": {
+        "status": "available"
+      }
+    },
+    {
+      "id": "AUD-1792906445818-csjk",
+      "timestamp": "2026-10-25T05:34:05.818Z",
+      "actor": "ALPHA-1",
+      "role": "RESCUE_TEAM",
+      "action": "UPDATE_TEAM_STATUS",
+      "target": "T1",
+      "details": {
+        "status": "on-scene"
+      }
+    },
+    {
+      "id": "AUD-1792906443288-hrv8",
+      "timestamp": "2026-10-25T05:34:03.288Z",
+      "actor": "ALPHA-1",
+      "role": "RESCUE_TEAM",
+      "action": "UPDATE_TEAM_STATUS",
+      "target": "T1",
+      "details": {
+        "status": "available"
+      }
+    },
+    {
+      "id": "AUD-1792906443033-iatl",
+      "timestamp": "2026-10-25T05:34:03.033Z",
+      "actor": "ALPHA-1",
+      "role": "RESCUE_TEAM",
+      "action": "UPDATE_TEAM_STATUS",
+      "target": "T1",
+      "details": {
+        "status": "on-scene"
+      }
+    },
+    {
+      "id": "AUD-1792906442458-aqsv",
+      "timestamp": "2026-10-25T05:34:02.458Z",
+      "actor": "ALPHA-1",
+      "role": "RESCUE_TEAM",
+      "action": "UPDATE_TEAM_STATUS",
+      "target": "T1",
+      "details": {
+        "status": "on-scene"
+      }
+    },
+    {
+      "id": "AUD-1792906441332-hmfq",
+      "timestamp": "2026-10-25T05:34:01.332Z",
+      "actor": "ALPHA-1",
+      "role": "RESCUE_TEAM",
+      "action": "UPDATE_TEAM_STATUS",
+      "target": "T1",
+      "details": {
+        "status": "on-scene"
+      }
+    },
+    {
+      "id": "AUD-1792906440482-d7e3",
+      "timestamp": "2026-10-25T05:34:00.482Z",
+      "actor": "ALPHA-1",
+      "role": "RESCUE_TEAM",
+      "action": "UPDATE_TEAM_STATUS",
+      "target": "T1",
+      "details": {
+        "status": "available"
+      }
+    },
+    {
+      "id": "AUD-1792906404499-h99a",
+      "timestamp": "2026-10-25T05:33:24.499Z",
+      "actor": "ALPHA-1",
+      "role": "RESCUE_TEAM",
+      "action": "USER_LOGIN",
+      "target": "USR-RESCUE-1",
+      "details": {
+        "ip": "::1",
+        "rememberMe": true,
+        "expectedRole": "RESCUE_TEAM"
+      }
+    },
+    {
+      "id": "AUD-1792906382014-ijmy",
+      "timestamp": "2026-10-25T05:33:02.014Z",
+      "actor": "citizen",
+      "role": "CITIZEN",
+      "action": "USER_LOGOUT",
+      "target": "USR-CITIZEN-1"
+    },
+    {
+      "id": "AUD-1792906330727-n6z5",
+      "timestamp": "2026-10-25T05:32:10.727Z",
+      "actor": "citizen",
+      "role": "CITIZEN",
+      "action": "USER_LOGIN",
+      "target": "USR-CITIZEN-1",
+      "details": {
+        "ip": "::1",
+        "rememberMe": true,
+        "expectedRole": "CITIZEN"
+      }
+    },
+    {
+      "id": "AUD-1792906326443-j3v0",
+      "timestamp": "2026-10-25T05:32:06.443Z",
+      "actor": "citizen",
+      "role": "CITIZEN",
+      "action": "USER_LOGIN",
+      "target": "USR-CITIZEN-1",
+      "details": {
+        "ip": "::1",
+        "rememberMe": true,
+        "expectedRole": "CITIZEN"
+      }
+    },
+    {
+      "id": "AUD-1792906317570-x6xi",
+      "timestamp": "2026-10-25T05:31:57.570Z",
+      "actor": "citizen",
+      "role": "CITIZEN",
+      "action": "USER_LOGIN",
+      "target": "USR-CITIZEN-1",
+      "details": {
+        "ip": "::1",
+        "rememberMe": true,
+        "expectedRole": "CITIZEN"
+      }
+    },
+    {
+      "id": "AUD-1792903903355-p41j",
+      "timestamp": "2026-10-25T04:51:43.355Z",
+      "actor": "citizen",
+      "role": "CITIZEN",
+      "action": "EMERGENCY_SOS_SUBMISSION",
+      "target": "SOS-6367",
+      "details": {
+        "sector": "Sector 7 · Riverside",
+        "headcount": 1,
+        "medicalUrgency": true
+      }
+    },
+    {
+      "id": "AUD-1792903855104-afmr",
+      "timestamp": "2026-10-25T04:50:55.104Z",
+      "actor": "citizen",
+      "role": "CITIZEN",
+      "action": "USER_LOGIN",
+      "target": "USR-CITIZEN-1",
+      "details": {
+        "ip": "::1",
+        "rememberMe": true,
+        "expectedRole": "CITIZEN"
+      }
+    },
+    {
+      "id": "AUD-1792903386247-3f7i",
+      "timestamp": "2026-10-25T04:43:06.247Z",
+      "actor": "SH-01",
+      "role": "SHELTER_ADMIN",
+      "action": "EVACUEE_INTAKE",
+      "target": "SH-01",
+      "details": {
+        "evacueeId": "EVAC-1792903386110-534",
+        "familyCount": 1,
+        "newOccupancy": 1881
+      }
+    },
+    {
+      "id": "AUD-1792902305413-nzat",
+      "timestamp": "2026-10-25T04:25:05.413Z",
+      "actor": "SH-01",
+      "role": "SHELTER_ADMIN",
+      "action": "ADD_VOLUNTEER",
+      "target": "VOL-1792902305369",
+      "details": {
+        "shelterId": "SH-01",
+        "name": "mm",
+        "role": "Intake desk"
+      }
+    },
+    {
+      "id": "AUD-1792901586670-24hn",
+      "timestamp": "2026-10-25T04:13:06.670Z",
+      "actor": "SH-01",
+      "role": "SHELTER_ADMIN",
+      "action": "USER_LOGIN",
+      "target": "USR-SHELTER-1",
+      "details": {
+        "ip": "::1"
+      }
+    },
+    {
+      "id": "AUD-1792900767103-494o",
+      "timestamp": "2026-10-25T03:59:27.103Z",
+      "actor": "ALPHA-1",
+      "role": "RESCUE_TEAM",
+      "action": "UPDATE_MISSION_STATUS",
+      "target": "MIS-4471",
+      "details": {
+        "status": "EN_ROUTE",
+        "outcomeReport": "Mission status updated to EN_ROUTE by field unit."
+      }
+    },
+    {
+      "id": "AUD-1792900764807-2ic0",
+      "timestamp": "2026-10-25T03:59:24.807Z",
+      "actor": "ALPHA-1",
+      "role": "RESCUE_TEAM",
+      "action": "UPDATE_MISSION_STATUS",
+      "target": "MIS-4471",
+      "details": {
+        "status": "ON_SCENE",
+        "outcomeReport": "Mission status updated to ON_SCENE by field unit."
+      }
+    },
+    {
+      "id": "AUD-1792900762603-all8",
+      "timestamp": "2026-10-25T03:59:22.603Z",
+      "actor": "ALPHA-1",
+      "role": "RESCUE_TEAM",
+      "action": "UPDATE_MISSION_STATUS",
+      "target": "MIS-4471",
+      "details": {
+        "status": "COMPLETED",
+        "outcomeReport": "All sector casualties triaged and transferred to safe corridor."
+      }
+    },
+    {
+      "id": "AUD-1792900497371-4d0f",
+      "timestamp": "2026-10-25T03:54:57.371Z",
+      "actor": "ALPHA-1",
+      "role": "RESCUE_TEAM",
+      "action": "USER_LOGIN",
+      "target": "USR-RESCUE-1",
+      "details": {
+        "ip": "::1"
+      }
+    },
+    {
+      "id": "AUD-1792900492764-p1ko",
+      "timestamp": "2026-10-25T03:54:52.764Z",
+      "actor": "ALPHA-1",
+      "role": "RESCUE_TEAM",
+      "action": "USER_LOGIN",
+      "target": "USR-RESCUE-1",
+      "details": {
+        "ip": "::1"
+      }
+    },
+    {
+      "id": "AUD-1792900466560-dks0",
+      "timestamp": "2026-10-25T03:54:26.560Z",
+      "actor": "citizen",
+      "role": "CITIZEN",
+      "action": "USER_LOGOUT",
+      "target": "USR-CITIZEN-1"
+    },
+    {
+      "id": "AUD-1792900191908-d9at",
+      "timestamp": "2026-10-25T03:49:51.908Z",
+      "actor": "citizen",
+      "role": "CITIZEN",
+      "action": "EMERGENCY_SOS_SUBMISSION",
+      "target": "SOS-1190",
+      "details": {
+        "sector": "Sector 7 · Riverside",
+        "headcount": 1,
+        "medicalUrgency": true
+      }
+    },
+    {
+      "id": "AUD-1792900108981-kylx",
+      "timestamp": "2026-10-25T03:48:28.981Z",
+      "actor": "citizen",
+      "role": "CITIZEN",
+      "action": "USER_LOGIN",
+      "target": "USR-CITIZEN-1",
+      "details": {
+        "ip": "::1"
+      }
+    },
+    {
+      "id": "AUD-1792899064536-6alb",
+      "timestamp": "2026-10-25T03:31:04.536Z",
+      "actor": "Anonymous Citizen",
+      "role": "CITIZEN",
+      "action": "EMERGENCY_SOS_SUBMISSION",
+      "target": "SOS-4000",
+      "details": {
+        "sector": "Sector 7 · Riverside",
+        "headcount": 1,
+        "medicalUrgency": true
+      }
+    },
     {
       "id": "AUD-1792392581545-0uis",
       "timestamp": "2026-10-19T06:49:41.545Z",

@@ -57,7 +57,7 @@ function EvacuationPage() {
       }
       setTimeout(() => setFeedback(null), 7000);
     } catch (err: any) {
-      alert(err.message || "Failed to recompute evacuation corridors.");
+      setFeedback(`Error: ${err.message || "Failed to recompute evacuation corridors."}`);
     } finally {
       setRecomputing(false);
     }

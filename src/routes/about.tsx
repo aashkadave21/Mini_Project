@@ -22,15 +22,18 @@ function AboutPage() {
   const [benchmarking, setBenchmarking] = useState(false);
   const [benchmarkData, setBenchmarkData] = useState<any[] | null>(null);
 
+  const [benchmarkError, setBenchmarkError] = useState<string | null>(null);
+
   const runBenchmark = async () => {
     setBenchmarking(true);
+    setBenchmarkError(null);
     try {
       const res = await api.analytics.getBenchmark();
       if (res.results) {
         setBenchmarkData(res.results);
       }
     } catch {
-      alert("Please ensure the SDREP backend server is running on port 3001.");
+      setBenchmarkError("Benchmark execution failed. Ensure the SDREP backend server is running on port 3001.");
     } finally {
       setBenchmarking(false);
     }
@@ -107,9 +110,11 @@ function AboutPage() {
             }
           />
           <div className="p-4">
-            <p className="text-xs text-muted-foreground mb-4">
-              Executes Dijkstra's algorithm and A* search across synthetic road networks of increasing vertex and edge scale to measure execution latency, nodes explored, and path optimality.
-            </p>
+            {benchmarkError && (
+              <div className="mb-4 rounded-md border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-300">
+                {benchmarkError}
+              </div>
+            )}
 
             {benchmarkData && (
               <div className="overflow-x-auto">

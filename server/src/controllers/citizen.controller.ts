@@ -253,3 +253,104 @@ export async function syncOfflineQueue(req: AuthenticatedRequest, res: Response)
     data: processed,
   });
 }
+
+export async function getMyRequests(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const citizenId = req.user?.associatedEntityId || req.user?.userId;
+  const username = req.user?.username;
+
+  let requests = db.state.sosRequests;
+  if (citizenId || username) {
+    requests = requests.filter(
+      (r) => r.citizenId === citizenId || (username && r.senderName.toLowerCase() === username.toLowerCase())
+    );
+  }
+
+  // Enrich with assigned team details if assigned
+  const enriched = requests.map((r) => {
+    const team = r.assignedTeamId ? db.state.rescueTeams.find((t) => t.id === r.assignedTeamId) : undefined;
+    return {
+      ...r,
+      assignedTeamCallsign: team?.callsign,
+      assignedTeamUnit: team?.unit,
+    };
+  });
+
+  res.json({ success: true, data: enriched });
+}
+
+export async function updateCitizenProfile(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const citizenId = req.user?.associatedEntityId;
+  const { bloodGroup, conditions, medication, emergencyContact, sector } = req.body;
+
+  await db.withTransaction(async (state) => {
+    let profile = citizenId
+      ? state.citizenProfiles.find((c) => c.id === citizenId || c.userId === req.user?.userId)
+      : undefined;
+    if (!profile) profile = state.citizenProfiles.find((c) => c.userId === req.user?.userId);
+    if (!profile) profile = state.citizenProfiles[0];
+
+    if (profile) {
+      if (bloodGroup !== undefined) profile.bloodGroup = bloodGroup;
+      if (conditions !== undefined) profile.conditions = conditions;
+      if (medication !== undefined) profile.medication = medication;
+      if (emergencyContact !== undefined) profile.emergencyContact = emergencyContact;
+      if (sector !== undefined) profile.sector = sector;
+    }
+  });
+
+  const updatedProfile =
+    (citizenId ? db.state.citizenProfiles.find((c) => c.id === citizenId || c.userId === req.user?.userId) : undefined) ||
+    db.state.citizenProfiles.find((c) => c.userId === req.user?.userId) ||
+    db.state.citizenProfiles[0]!;
+
+  res.json({ success: true, message: "Profile updated successfully.", data: updatedProfile });
+}
+
+export async function addFamilyMember(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { name, status = "Safe", tone = "success" } = req.body;
+  if (!name) {
+    res.status(400).json({ success: false, error: "ValidationError", message: "Family member name is required." });
+    return;
+  }
+
+  const citizenId = req.user?.associatedEntityId;
+  const newMember = {
+    id: `FAM-${Date.now()}`,
+    name: name.trim(),
+    status,
+    tone: (tone as "success" | "warning" | "critical") || "success",
+    lastReported: new Date().toISOString(),
+  };
+
+  await db.withTransaction(async (state) => {
+    let profile = citizenId
+      ? state.citizenProfiles.find((c) => c.id === citizenId || c.userId === req.user?.userId)
+      : undefined;
+    if (!profile) profile = state.citizenProfiles.find((c) => c.userId === req.user?.userId);
+    if (!profile) profile = state.citizenProfiles[0];
+    if (profile) {
+      profile.family.push(newMember);
+    }
+  });
+
+  res.status(201).json({ success: true, data: newMember, message: "Family contact added." });
+}
+
+export async function removeFamilyMember(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { memberId } = req.params;
+  const citizenId = req.user?.associatedEntityId;
+
+  await db.withTransaction(async (state) => {
+    let profile = citizenId
+      ? state.citizenProfiles.find((c) => c.id === citizenId || c.userId === req.user?.userId)
+      : undefined;
+    if (!profile) profile = state.citizenProfiles.find((c) => c.userId === req.user?.userId);
+    if (!profile) profile = state.citizenProfiles[0];
+    if (profile) {
+      profile.family = profile.family.filter((f) => f.id !== memberId);
+    }
+  });
+
+  res.json({ success: true, message: "Family member removed." });
+}
+

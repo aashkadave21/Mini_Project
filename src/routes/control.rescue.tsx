@@ -38,7 +38,7 @@ function RescuePage() {
       setFeedback(res.message);
       setTimeout(() => setFeedback(null), 8000);
     } catch (err: any) {
-      alert(err.message || "Failed to execute auto-allocation.");
+      setFeedback(`Error: ${err.message || "Failed to execute auto-allocation."}`);
     } finally {
       setDispatching(false);
     }

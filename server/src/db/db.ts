@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import pg from "pg";
+import { postgresAdapter } from "./postgres.adapter.js";
 import type {
   User,
   Incident,
@@ -23,8 +23,6 @@ import type {
   SOSRequest,
   AuditLog,
 } from "../types/index.js";
-
-const { Pool } = pg;
 
 export interface DBState {
   users: User[];
@@ -50,7 +48,6 @@ export interface DBState {
 }
 
 class RelationalDatabase {
-  private pool: pg.Pool | null = null;
   private isPostgresConnected = false;
   private memoryStoreFile: string;
   public state: DBState = {
@@ -105,20 +102,36 @@ class RelationalDatabase {
     }
   }
 
-  public async init(): Promise<{ engine: "PostgreSQL" | "RelationalStorageEngine"; status: string }> {
+  public async init(): Promise<{ engine: "PostgreSQL" | "RelationalStorageEngine"; status: string; connection?: string }> {
     const connectionString = process.env.DATABASE_URL;
     if (connectionString) {
       try {
-        this.pool = new Pool({
-          connectionString,
-          connectionTimeoutMillis: 3000,
-        });
-        const client = await this.pool.connect();
-        const res = await client.query("SELECT NOW()");
-        client.release();
+        const conn = await postgresAdapter.connect(connectionString);
+        console.log(`[Database] Connected to PostgreSQL at ${conn.sanitizedUrl}. Server time: ${conn.serverTime}`);
+
+        // Run DDL migrations idempotently
+        await postgresAdapter.executeMigrations();
+        console.log("[Database] Relational schema verified.");
+
+        // Check if remote DB already has data or needs initial hydration
+        const hasData = await postgresAdapter.checkHasData();
+        if (hasData) {
+          const remoteState = await postgresAdapter.loadState();
+          if (remoteState && remoteState.users.length > 0) {
+            this.state = remoteState;
+            console.log(`[Database] Loaded ${remoteState.users.length} users, ${remoteState.shelters.length} shelters from Supabase.`);
+          }
+        } else {
+          // If remote is fresh, synchronize local state into Supabase
+          if (this.state.users && this.state.users.length > 0) {
+            console.log("[Database] Synchronizing local dataset to Supabase PostgreSQL...");
+            await postgresAdapter.migrateLocalState(this.state);
+            console.log("[Database] Initial synchronization complete.");
+          }
+        }
+
         this.isPostgresConnected = true;
-        console.log(`[Database] Connected to PostgreSQL at ${connectionString}. Server time: ${res.rows[0].now}`);
-        return { engine: "PostgreSQL", status: "Connected" };
+        return { engine: "PostgreSQL", status: "Connected", connection: conn.sanitizedUrl };
       } catch (err: any) {
         console.warn(`[Database] PostgreSQL connection failed (${err.message}). Falling back to RelationalStorageEngine.`);
         this.isPostgresConnected = false;
@@ -150,8 +163,18 @@ class RelationalDatabase {
     const snapshot = JSON.stringify(this.state);
     try {
       const result = await action(this.state);
-      // Durability (D): Save on commit
+      // Durability (D): Save on commit to local file
       this.saveToFile();
+
+      // If connected to PostgreSQL, commit changes synchronously to Supabase
+      if (this.isPostgresConnected) {
+        try {
+          await postgresAdapter.migrateLocalState(this.state);
+        } catch (pgErr: any) {
+          console.warn("[PostgreSQL] Transaction sync warning:", pgErr.message);
+        }
+      }
+
       return result;
     } catch (err) {
       // Rollback to pre-transaction state
@@ -175,6 +198,10 @@ class RelationalDatabase {
       this.state.auditLogs.pop();
     }
     this.saveToFile();
+
+    if (this.isPostgresConnected) {
+      postgresAdapter.logAuditEntry(entry).catch(() => {});
+    }
   }
 }
 

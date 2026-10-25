@@ -48,7 +48,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
 export const api = {
   auth: {
-    login: (credentials: { username: string; password: string }) =>
+    login: (credentials: { username: string; password: string; expectedRole?: string; rememberMe?: boolean }) =>
       request<{ success: boolean; token: string; user: any; message?: string }>("/auth/login", {
         method: "POST",
         body: JSON.stringify(credentials),
@@ -57,6 +57,29 @@ export const api = {
     logout: () =>
       request<{ success: boolean; message: string }>("/auth/logout", {
         method: "POST",
+      }),
+    registerCitizen: (payload: {
+      fullName: string;
+      email?: string;
+      mobile?: string;
+      password: string;
+      sector?: string;
+      conditions?: string;
+      emergencyContact?: string;
+    }) =>
+      request<{ success: boolean; token: string; user: any; message: string }>("/auth/register-citizen", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    forgotPassword: (payload: { identifier: string; portal?: string }) =>
+      request<{ success: boolean; message: string }>("/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    changePassword: (payload: { currentPassword: string; newPassword: string }) =>
+      request<{ success: boolean; message: string }>("/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify(payload),
       }),
   },
 
@@ -69,6 +92,12 @@ export const api = {
 
   citizen: {
     getProfile: () => request<{ success: boolean; data: any }>("/citizens/me"),
+    getMyRequests: () => request<{ success: boolean; data: any[] }>("/citizens/me/requests"),
+    updateProfile: (payload: { bloodGroup?: string; conditions?: string; medication?: string; emergencyContact?: string; sector?: string }) =>
+      request<{ success: boolean; message: string; data: any }>("/citizens/me/profile", {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }),
     updateChecklist: (itemIndex: number, checked: boolean) =>
       request<{ success: boolean; data: any[] }>("/citizens/me/checklist", {
         method: "PATCH",
@@ -79,6 +108,15 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ memberId, status, tone }),
       }),
+    addFamilyMember: (payload: { name: string; status?: string; tone?: string }) =>
+      request<{ success: boolean; message: string; data: any }>("/citizens/me/family", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    removeFamilyMember: (memberId: string) =>
+      request<{ success: boolean; message: string }>("/citizens/me/family/" + memberId, {
+        method: "DELETE",
+      }),
     submitSOS: (payload: { sector?: string; headcount?: number; medicalUrgency?: boolean; notes?: string }) =>
       request<{ success: boolean; message: string; data: any }>("/sos", {
         method: "POST",
@@ -88,10 +126,18 @@ export const api = {
 
   rescue: {
     getActive: () => request<{ success: boolean; data: any }>("/rescue/active"),
+    getAllTeams: () => request<{ success: boolean; data: any[] }>("/rescue/teams"),
+    getAllMissions: () => request<{ success: boolean; data: any[] }>("/rescue/missions"),
+    getReports: () => request<{ success: boolean; data: any[] }>("/rescue/reports"),
     updateMissionStatus: (missionId: string, status: string, outcomeReport?: string) =>
       request<{ success: boolean; message: string; data: any }>(`/rescue/missions/${missionId}/status`, {
         method: "PATCH",
         body: JSON.stringify({ status, outcomeReport }),
+      }),
+    updateTeamStatus: (teamId: string, status?: string, fuel?: number) =>
+      request<{ success: boolean; message: string; data: any }>(`/rescue/teams/${teamId}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status, fuel }),
       }),
     submitReport: (incidentId: string, observation: string) =>
       request<{ success: boolean; message: string; data: any }>(`/rescue/missions/${incidentId}/reports`, {
@@ -105,10 +151,22 @@ export const api = {
   },
 
   shelter: {
+    getAll: () => request<{ success: boolean; data: any[] }>("/shelters"),
     getShelter: (id: string) => request<{ success: boolean; data: any }>(`/shelters/${id}`),
+    getEvacuees: (id: string) => request<{ success: boolean; data: any[] }>(`/shelters/${id}/evacuees`),
     registerIntake: (shelterId: string, payload: { fullName: string; familyCount: number; originSector: string; mobilityNeeds?: string; specialNeeds?: string }) =>
       request<{ success: boolean; message: string; data: any }>(`/shelters/${shelterId}/intake`, {
         method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    checkout: (shelterId: string, payload: { evacueeId?: string; count?: number }) =>
+      request<{ success: boolean; message: string; data: any }>(`/shelters/${shelterId}/checkout`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    updateInventory: (shelterId: string, payload: { waterStock?: number; foodStock?: number; blanketsStock?: number; medicalKitsStock?: number; sanitationStock?: number }) =>
+      request<{ success: boolean; message: string; data: any }>(`/shelters/${shelterId}/inventory`, {
+        method: "PATCH",
         body: JSON.stringify(payload),
       }),
     requestSupplies: (shelterId: string, payload: { resource: string; quantity: number; urgency: string }) =>
@@ -124,6 +182,7 @@ export const api = {
   },
 
   hospital: {
+    getAll: () => request<{ success: boolean; data: any[] }>("/hospitals"),
     getDetails: (id: string) => request<{ success: boolean; data: any }>(`/hospitals/${id}`),
     declareDiversion: (id: string, diversion?: boolean, reason?: string) =>
       request<{ success: boolean; message: string; data: any }>(`/hospitals/${id}/diversion`, {
@@ -135,6 +194,29 @@ export const api = {
         method: "POST",
         body: JSON.stringify(payload),
       }),
+    updateTriageStatus: (id: string, caseId: string, payload: { status?: string; tag?: string }) =>
+      request<{ success: boolean; message: string; data: any }>(`/hospitals/${id}/triage/${caseId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }),
+    registerAmbulance: (id: string, payload: { unit: string; eta?: string; triage?: string; cases?: number }) =>
+      request<{ success: boolean; data: any }>(`/hospitals/${id}/ambulances`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    confirmAmbulanceArrival: (id: string, ambId: string) =>
+      request<{ success: boolean; message: string; data: any }>(`/hospitals/${id}/ambulances/${ambId}/arrive`, {
+        method: "POST",
+      }),
+    updateBloodStock: (idOrGroup: string, groupOrUnits: string | number, maybeUnits?: number) => {
+      const id = maybeUnits !== undefined ? idOrGroup : "HSP-1";
+      const group = (maybeUnits !== undefined ? groupOrUnits : idOrGroup) as string;
+      const units = (maybeUnits !== undefined ? maybeUnits : groupOrUnits) as number;
+      return request<{ success: boolean; message: string; data: any }>(`/hospitals/${id}/blood`, {
+        method: "PATCH",
+        body: JSON.stringify({ group, units }),
+      });
+    },
   },
 
   evacuation: {
@@ -155,5 +237,6 @@ export const api = {
   analytics: {
     getOverview: () => request<{ success: boolean; data: any }>("/analytics/overview"),
     getBenchmark: () => request<{ success: boolean; results: any[] }>("/analytics/benchmark"),
+    getAuditLogs: () => request<{ success: boolean; data: any[] }>("/analytics/audit-logs"),
   },
 };

@@ -247,3 +247,90 @@ export async function updateVolunteerRoster(req: AuthenticatedRequest, res: Resp
 
   res.status(201).json({ success: true, data: newVolunteer });
 }
+
+export async function checkoutEvacuee(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { id } = req.params;
+  const { evacueeId, count = 1 } = req.body;
+
+  const shelter = db.state.shelters.find((s) => s.id === id);
+  if (!shelter) {
+    res.status(404).json({ success: false, message: `Shelter ${id} not found.` });
+    return;
+  }
+
+  const releaseCount = Number(count) || 1;
+
+  await db.withTransaction(async (state) => {
+    const s = state.shelters.find((sh) => sh.id === id);
+    if (s) {
+      s.occupancy = Math.max(0, s.occupancy - releaseCount);
+      const load = s.occupancy / s.capacity;
+      if (load >= 0.98) s.status = "full";
+      else if (load >= 0.75) s.status = "near-full";
+      else s.status = "open";
+      s.lastUpdated = new Date().toISOString();
+    }
+    if (evacueeId) {
+      const idx = state.evacuees.findIndex((e) => e.id === evacueeId);
+      if (idx !== -1) {
+        state.evacuees.splice(idx, 1);
+      }
+    }
+  });
+
+  await db.logAudit(req.user?.username || "SHELTER_ADMIN", req.user?.role || "SHELTER_ADMIN", "EVACUEE_CHECKOUT", id!, {
+    evacueeId,
+    releaseCount,
+    newOccupancy: shelter.occupancy,
+  });
+
+  eventBus.broadcast("SHELTER_OCCUPANCY_CHANGED", shelter);
+
+  res.json({
+    success: true,
+    message: `Evacuee check-out recorded. Released ${releaseCount} spaces. Current occupancy: ${shelter.occupancy}.`,
+    data: shelter,
+  });
+}
+
+export async function getEvacueesList(req: Request, res: Response): Promise<void> {
+  const { id } = req.params;
+  const evacuees = db.state.evacuees.filter((e) => e.shelterId === id);
+  res.json({ success: true, data: evacuees });
+}
+
+export async function updateInventory(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { id } = req.params;
+  const { waterStock, foodStock, blanketsStock, medicalKitsStock, sanitationStock } = req.body;
+
+  const shelter = db.state.shelters.find((s) => s.id === id);
+  if (!shelter) {
+    res.status(404).json({ success: false, message: `Shelter ${id} not found.` });
+    return;
+  }
+
+  await db.withTransaction(async (state) => {
+    const s = state.shelters.find((sh) => sh.id === id);
+    if (s) {
+      if (waterStock !== undefined) s.waterStock = Number(waterStock);
+      if (foodStock !== undefined) s.foodStock = Number(foodStock);
+      if (blanketsStock !== undefined) s.blanketsStock = Number(blanketsStock);
+      if (medicalKitsStock !== undefined) s.medicalKitsStock = Number(medicalKitsStock);
+      if (sanitationStock !== undefined) s.sanitationStock = Number(sanitationStock);
+      s.lastUpdated = new Date().toISOString();
+    }
+  });
+
+  await db.logAudit(req.user?.username || "SHELTER_ADMIN", req.user?.role || "SHELTER_ADMIN", "UPDATE_SHELTER_INVENTORY", id!, {
+    waterStock,
+    foodStock,
+    blanketsStock,
+  });
+
+  res.json({
+    success: true,
+    message: "Shelter inventory successfully updated.",
+    data: shelter,
+  });
+}
+

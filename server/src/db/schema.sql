@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS shelters (
     id VARCHAR(32) PRIMARY KEY,
     name VARCHAR(150) NOT NULL,
     capacity INT NOT NULL CHECK (capacity > 0),
-    occupancy INT DEFAULT 0 CHECK (occupancy >= 0 AND occupancy <= capacity),
+    occupancy INT DEFAULT 0 CHECK (occupancy >= 0),
     incoming INT DEFAULT 0 CHECK (incoming >= 0),
     medical BOOLEAN DEFAULT FALSE NOT NULL,
     status VARCHAR(16) NOT NULL CHECK (status IN ('open', 'near-full', 'full')),
@@ -145,6 +145,7 @@ CREATE TABLE IF NOT EXISTS shelters (
 );
 
 CREATE INDEX IF NOT EXISTS idx_shelters_status ON shelters(status);
+ALTER TABLE shelters DROP CONSTRAINT IF EXISTS shelters_check;
 
 CREATE TABLE IF NOT EXISTS evacuees (
     id VARCHAR(64) PRIMARY KEY,

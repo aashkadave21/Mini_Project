@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite dev",
     "server": "tsx server/src/index.ts",
+    "server:migrate": "tsx server/src/db/migrate.ts",
     "server:seed": "tsx server/src/db/seed.ts",
     "test:backend": "tsx test/backend.test.ts",
     "build": "vite build",

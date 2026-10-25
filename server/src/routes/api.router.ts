@@ -1,13 +1,78 @@
 import { Router } from "express";
-import { login, getCurrentUser, logout } from "../controllers/auth.controller.js";
-import { getPublicStatus, getPublicIncidents, getPublicAlerts, getPublicStatistics } from "../controllers/public.controller.js";
-import { getAllIncidents, getIncidentById, createIncident, updateIncident, closeIncident } from "../controllers/incident.controller.js";
-import { getCorridors, computeRoute, recalculateAllRoutes, toggleRoadState, getSectorsClearance } from "../controllers/evacuation.controller.js";
-import { getAllShelters, getShelterById, registerEvacueeIntake, createSupplyRequest, updateVolunteerRoster } from "../controllers/shelter.controller.js";
-import { getAllTeams, getAllMissions, getActiveMissionDetails, updateMissionStatus, submitIncidentReport, autoAllocateMissions } from "../controllers/rescue.controller.js";
-import { getAllHospitals, getHospitalDetails, declareHospitalDiversion, addTriageCase, registerAmbulanceArrival } from "../controllers/hospital.controller.js";
-import { getCitizenProfile, updateChecklist, updateFamilyCheckin, submitSOS, syncOfflineQueue } from "../controllers/citizen.controller.js";
-import { getAnalyticsOverview, getAlgorithmBenchmark, getAuditLogs } from "../controllers/analytics.controller.js";
+import {
+  login,
+  getCurrentUser,
+  logout,
+  registerCitizen,
+  forgotPassword,
+  changePassword,
+} from "../controllers/auth.controller.js";
+import {
+  getPublicStatus,
+  getPublicIncidents,
+  getPublicAlerts,
+  getPublicStatistics,
+} from "../controllers/public.controller.js";
+import {
+  getAllIncidents,
+  getIncidentById,
+  createIncident,
+  updateIncident,
+  closeIncident,
+} from "../controllers/incident.controller.js";
+import {
+  getCorridors,
+  computeRoute,
+  recalculateAllRoutes,
+  toggleRoadState,
+  getSectorsClearance,
+} from "../controllers/evacuation.controller.js";
+import {
+  getAllShelters,
+  getShelterById,
+  registerEvacueeIntake,
+  createSupplyRequest,
+  updateVolunteerRoster,
+  checkoutEvacuee,
+  getEvacueesList,
+  updateInventory,
+} from "../controllers/shelter.controller.js";
+import {
+  getAllTeams,
+  getAllMissions,
+  getActiveMissionDetails,
+  updateMissionStatus,
+  submitIncidentReport,
+  autoAllocateMissions,
+  updateTeamStatus,
+  getMissionReports,
+} from "../controllers/rescue.controller.js";
+import {
+  getAllHospitals,
+  getHospitalDetails,
+  declareHospitalDiversion,
+  addTriageCase,
+  registerAmbulanceArrival,
+  updateTriageStatus,
+  confirmAmbulanceArrival,
+  updateBloodStock,
+} from "../controllers/hospital.controller.js";
+import {
+  getCitizenProfile,
+  updateChecklist,
+  updateFamilyCheckin,
+  submitSOS,
+  syncOfflineQueue,
+  getMyRequests,
+  updateCitizenProfile,
+  addFamilyMember,
+  removeFamilyMember,
+} from "../controllers/citizen.controller.js";
+import {
+  getAnalyticsOverview,
+  getAlgorithmBenchmark,
+  getAuditLogs,
+} from "../controllers/analytics.controller.js";
 import { authenticate, optionalAuthenticate, requireRole } from "../middleware/auth.middleware.js";
 import { eventBus } from "../events/event-bus.js";
 import { db } from "../db/db.js";
@@ -23,6 +88,7 @@ apiRouter.get("/health", (_req, res) => {
     database: {
       engine: db.backendEngine,
       connected: db.isConnected,
+      storage: db.backendEngine === "PostgreSQL" ? "Supabase PostgreSQL (Cloud Relational)" : "Local RelationalStorageEngine (ACID JSON Store)",
     },
     uptimeSeconds: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
@@ -51,6 +117,9 @@ apiRouter.get("/events", (req, res) => {
 apiRouter.post("/auth/login", login);
 apiRouter.post("/auth/logout", authenticate, logout);
 apiRouter.get("/auth/me", authenticate, getCurrentUser);
+apiRouter.post("/auth/register-citizen", registerCitizen);
+apiRouter.post("/auth/forgot-password", forgotPassword);
+apiRouter.post("/auth/change-password", authenticate, changePassword);
 
 // --- Public Endpoints ---
 apiRouter.get("/public/status", getPublicStatus);
@@ -75,7 +144,10 @@ apiRouter.get("/evacuation/sectors", getSectorsClearance);
 // --- Shelters & Intake ---
 apiRouter.get("/shelters", getAllShelters);
 apiRouter.get("/shelters/:id", getShelterById);
+apiRouter.get("/shelters/:id/evacuees", getEvacueesList);
 apiRouter.post("/shelters/:id/intake", optionalAuthenticate, registerEvacueeIntake);
+apiRouter.post("/shelters/:id/checkout", optionalAuthenticate, checkoutEvacuee);
+apiRouter.patch("/shelters/:id/inventory", optionalAuthenticate, updateInventory);
 apiRouter.post("/shelters/:id/supply-requests", optionalAuthenticate, createSupplyRequest);
 apiRouter.post("/shelters/:id/volunteers", optionalAuthenticate, updateVolunteerRoster);
 
@@ -83,7 +155,9 @@ apiRouter.post("/shelters/:id/volunteers", optionalAuthenticate, updateVolunteer
 apiRouter.get("/rescue/teams", getAllTeams);
 apiRouter.get("/rescue/missions", getAllMissions);
 apiRouter.get("/rescue/active", getActiveMissionDetails);
+apiRouter.get("/rescue/reports", getMissionReports);
 apiRouter.patch("/rescue/missions/:id/status", optionalAuthenticate, updateMissionStatus);
+apiRouter.patch("/rescue/teams/:id/status", optionalAuthenticate, updateTeamStatus);
 apiRouter.post("/rescue/missions/:id/reports", optionalAuthenticate, submitIncidentReport);
 apiRouter.post("/rescue/auto-allocate", optionalAuthenticate, autoAllocateMissions);
 
@@ -92,11 +166,18 @@ apiRouter.get("/hospitals", getAllHospitals);
 apiRouter.get("/hospitals/:id", getHospitalDetails);
 apiRouter.post("/hospitals/:id/diversion", optionalAuthenticate, declareHospitalDiversion);
 apiRouter.post("/hospitals/:id/triage", optionalAuthenticate, addTriageCase);
+apiRouter.patch("/hospitals/:id/triage/:caseId", optionalAuthenticate, updateTriageStatus);
 apiRouter.post("/hospitals/:id/ambulances", optionalAuthenticate, registerAmbulanceArrival);
+apiRouter.post("/hospitals/:id/ambulances/:ambId/arrive", optionalAuthenticate, confirmAmbulanceArrival);
+apiRouter.patch("/hospitals/:id/blood", optionalAuthenticate, updateBloodStock);
 
 // --- Citizen & SOS ---
 apiRouter.get("/citizens/me", optionalAuthenticate, getCitizenProfile);
+apiRouter.get("/citizens/me/requests", optionalAuthenticate, getMyRequests);
+apiRouter.patch("/citizens/me/profile", optionalAuthenticate, updateCitizenProfile);
 apiRouter.patch("/citizens/me/checklist", optionalAuthenticate, updateChecklist);
+apiRouter.post("/citizens/me/family", optionalAuthenticate, addFamilyMember);
+apiRouter.delete("/citizens/me/family/:memberId", optionalAuthenticate, removeFamilyMember);
 apiRouter.post("/citizens/me/family/checkin", optionalAuthenticate, updateFamilyCheckin);
 apiRouter.post("/sos", optionalAuthenticate, submitSOS);
 apiRouter.post("/offline/sync", optionalAuthenticate, syncOfflineQueue);
