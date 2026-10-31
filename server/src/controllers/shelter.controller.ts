@@ -334,3 +334,47 @@ export async function updateInventory(req: AuthenticatedRequest, res: Response):
   });
 }
 
+export async function updateShelterCapacity(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { id } = req.params;
+  const { capacity, occupancy, status } = req.body;
+
+  const shelter = db.state.shelters.find((s) => s.id === id);
+  if (!shelter) {
+    res.status(404).json({ success: false, message: `Shelter ${id} not found.` });
+    return;
+  }
+
+  await db.withTransaction(async (state) => {
+    const idx = state.shelters.findIndex((s) => s.id === id);
+    if (idx !== -1) {
+      if (capacity !== undefined) state.shelters[idx]!.capacity = Math.max(1, Number(capacity));
+      if (occupancy !== undefined) state.shelters[idx]!.occupancy = Math.max(0, Number(occupancy));
+      if (status !== undefined) {
+        state.shelters[idx]!.status = status;
+      } else {
+        const load = state.shelters[idx]!.occupancy / state.shelters[idx]!.capacity;
+        if (load >= 0.98) state.shelters[idx]!.status = "full";
+        else if (load >= 0.75) state.shelters[idx]!.status = "near-full";
+        else state.shelters[idx]!.status = "open";
+      }
+      state.shelters[idx]!.lastUpdated = new Date().toISOString();
+    }
+  });
+
+  const updated = db.state.shelters.find((s) => s.id === id)!;
+  await db.logAudit(req.user?.username || "OPERATOR", req.user?.role || "OPERATOR", "UPDATE_SHELTER_CAPACITY", id!, {
+    capacity,
+    occupancy,
+    status: updated.status,
+  });
+
+  eventBus.broadcast("SHELTER_OCCUPANCY_CHANGED", updated);
+
+  res.json({
+    success: true,
+    message: `Shelter ${shelter.name} capacity updated (Capacity: ${updated.capacity}, Occupancy: ${updated.occupancy}, Status: ${updated.status}).`,
+    data: updated,
+  });
+}
+
+

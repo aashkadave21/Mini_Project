@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { db } from "../db/db.js";
-import { runRoutingBenchmark } from "../algorithms/benchmark.js";
+import { runRoutingBenchmark, runDynamicEmergencyBenchmark } from "../algorithms/benchmark.js";
+import { runKMeansClustering, recommendIdleVehicleStaging, type TrafficObservation } from "../algorithms/clustering.js";
 
 export async function getAnalyticsOverview(_req: Request, res: Response): Promise<void> {
   // Derive congestion trend from current road states (present snapshot + simulated history anchored to real data)
@@ -149,3 +150,86 @@ export async function getAuditLogs(_req: Request, res: Response): Promise<void> 
     data: db.state.auditLogs,
   });
 }
+
+export async function getCongestionClusters(req: Request, res: Response): Promise<void> {
+  const k = Number(req.query.k || req.body?.k) || 3;
+
+  // Build traffic observations from real road network + incidents
+  const observations: TrafficObservation[] = [];
+
+  // Road edges provide traffic observations
+  for (const road of db.state.roadEdges) {
+    const centerIdx = Math.floor(road.path.length / 2);
+    const midPos = road.path[centerIdx] || [19.08, 72.88];
+    let intensity = 20;
+    let speed = 45;
+    if (road.state === "congested") {
+      intensity = 78;
+      speed = 12;
+    } else if (road.state === "flooded") {
+      intensity = 95;
+      speed = 0;
+    } else if (road.state === "blocked") {
+      intensity = 100;
+      speed = 0;
+    }
+
+    observations.push({
+      id: `OBS-ROAD-${road.id}`,
+      pos: midPos,
+      intensity,
+      speedKmh: speed,
+      source: "LOOP_DETECTOR",
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  // Active incidents add demand intensity
+  for (const inc of db.state.incidents) {
+    if (inc.status === "resolved" || inc.status === "cancelled") continue;
+    observations.push({
+      id: `OBS-INC-${inc.id}`,
+      pos: inc.pos,
+      intensity: inc.severity === "critical" ? 90 : inc.severity === "warning" ? 65 : 40,
+      speedKmh: 5,
+      source: "CONNECTED_FLEET",
+      timestamp: inc.createdAt,
+    });
+  }
+
+  // If few observations, add synthetic arterial monitoring nodes
+  if (observations.length < 5) {
+    observations.push(
+      { id: "OBS-HOT-1", pos: [19.092, 72.862], intensity: 85, speedKmh: 8, source: "SIMULATED_HOTSPOT", timestamp: new Date().toISOString() },
+      { id: "OBS-HOT-2", pos: [19.062, 72.848], intensity: 80, speedKmh: 10, source: "SIMULATED_HOTSPOT", timestamp: new Date().toISOString() },
+      { id: "OBS-HOT-3", pos: [19.076, 72.889], intensity: 75, speedKmh: 14, source: "SIMULATED_HOTSPOT", timestamp: new Date().toISOString() },
+      { id: "OBS-HOT-4", pos: [19.083, 72.895], intensity: 60, speedKmh: 20, source: "SIMULATED_HOTSPOT", timestamp: new Date().toISOString() }
+    );
+  }
+
+  const clusters = runKMeansClustering(observations, k);
+  const stagingRecommendations = recommendIdleVehicleStaging(clusters, db.state.hazards);
+
+  res.json({
+    success: true,
+    data: {
+      clusters,
+      stagingRecommendations,
+      observationCount: observations.length,
+      k: clusters.length,
+    },
+  });
+}
+
+export async function runBenchmarkEndpoint(req: Request, res: Response): Promise<void> {
+  const requestCount = Number(req.body?.requestCount || req.query.requestCount) || 50;
+  const gridSize = Number(req.body?.gridSize || req.query.gridSize) || 8;
+
+  const result = runDynamicEmergencyBenchmark(requestCount, gridSize);
+
+  res.json({
+    success: true,
+    data: result,
+  });
+}
+

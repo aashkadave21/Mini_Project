@@ -20,6 +20,10 @@ import {
   Loader2,
   RefreshCw,
   Lock,
+  Wifi,
+  WifiOff,
+  UploadCloud,
+  Database,
 } from "lucide-react";
 import { RoleGuard } from "@/components/sdrep/RoleGuard";
 import { PortalShell, type PortalTabGroup } from "@/components/sdrep/PortalShell";
@@ -79,6 +83,29 @@ function RescueDashboardContent() {
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
+  // Scenario G: Offline Simulation & Local Queue State
+  const [isOfflineSimulated, setIsOfflineSimulated] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("sdrep_rescue_offline_sim") === "true";
+    }
+    return false;
+  });
+
+  const [offlineQueue, setOfflineQueue] = useState<any[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("sdrep_rescue_offline_queue");
+        return stored ? JSON.parse(stored) : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  });
+
+  const [syncingOffline, setSyncingOffline] = useState(false);
+  const [lastSyncStats, setLastSyncStats] = useState<any | null>(null);
+
   // Field Report form
   const [selectedIncident, setSelectedIncident] = useState("INC-4471");
   const [observation, setObservation] = useState("");
@@ -129,8 +156,91 @@ function RescueDashboardContent() {
     fetchData();
   }, [fetchData]);
 
+  // Scenario G: Toggle Offline Simulation
+  const handleToggleOffline = () => {
+    const nextState = !isOfflineSimulated;
+    setIsOfflineSimulated(nextState);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("sdrep_rescue_offline_sim", String(nextState));
+    }
+    setFeedback(nextState
+      ? "OFFLINE SIMULATION ACTIVE: Network communication disconnected. Status transitions and field reports will be safely queued in local browser storage."
+      : "Network connectivity restored: Central command communication online."
+    );
+  };
+
+  // Scenario G: Reconnect and Synchronise Queue Idempotently
+  const handleReconnectAndSync = async () => {
+    if (offlineQueue.length === 0) {
+      setFeedback("No offline updates currently queued.");
+      return;
+    }
+    setSyncingOffline(true);
+    try {
+      const res = await api.rescue.syncOffline(offlineQueue);
+      setLastSyncStats(res);
+      // Cache last synced operations in sessionStorage for duplicate retry testing
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("sdrep_last_synced_ops", JSON.stringify(offlineQueue));
+        localStorage.removeItem("sdrep_rescue_offline_queue");
+        localStorage.setItem("sdrep_rescue_offline_sim", "false");
+      }
+      setOfflineQueue([]);
+      setIsOfflineSimulated(false);
+      setFeedback(`Reconnected & Synchronised! ${res.processedCount} update(s) applied to central database. ${res.deduplicatedCount} duplicate(s) safely ignored.`);
+      await fetchData();
+    } catch (err: any) {
+      setFeedback(`Sync failed: ${err.message}`);
+    } finally {
+      setSyncingOffline(false);
+    }
+  };
+
+  // Scenario G: Test Duplicate Retry (Prove Idempotency)
+  const handleTestDuplicateRetry = async () => {
+    try {
+      const lastOps = typeof window !== "undefined" ? sessionStorage.getItem("sdrep_last_synced_ops") : null;
+      if (!lastOps) {
+        setFeedback("No previously synced offline batch found. Please perform an offline sync first.");
+        return;
+      }
+      const parsed = JSON.parse(lastOps);
+      const res = await api.rescue.syncOffline(parsed);
+      setLastSyncStats(res);
+      setFeedback(`Idempotency Verified! Resent ${parsed.length} identical operation(s): Central server safely ignored ${res.deduplicatedCount} duplicate(s) without duplicating records.`);
+    } catch (err: any) {
+      setFeedback(`Duplicate test error: ${err.message}`);
+    }
+  };
+
   const handleStatusChange = async (status: string, outcome?: string) => {
     if (!data?.mission) return;
+
+    // Scenario G: If offline, queue locally
+    if (isOfflineSimulated) {
+      const op = {
+        opId: `OP-STATUS-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        teamId: data?.team?.id || "T1",
+        status: status === "EN_ROUTE" ? "en-route" : status === "ON_SCENE" ? "on-scene" : status === "COMPLETED" ? "available" : status.toLowerCase(),
+        observation: outcome || `Mission status updated to ${status} by field unit (offline buffered).`,
+        incidentId: data?.mission?.incidentId,
+        timestamp: new Date().toISOString(),
+      };
+      const nextQueue = [...offlineQueue, op];
+      setOfflineQueue(nextQueue);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("sdrep_rescue_offline_queue", JSON.stringify(nextQueue));
+      }
+      setFeedback(`[OFFLINE QUEUED] Mission status transition to '${status}' saved locally (OpID: ${op.opId}).`);
+      // Optimistic local update
+      setData((prev: any) => ({
+        ...prev,
+        mission: { ...prev.mission, status },
+        team: { ...prev.team, status: op.status },
+      }));
+      return;
+    }
+
     setSubmitting(true);
     try {
       await api.rescue.updateMissionStatus(
@@ -150,6 +260,28 @@ function RescueDashboardContent() {
   const handleToggleTeamDuty = async () => {
     if (!data?.team) return;
     const newStatus = data.team.status === "available" ? "on-scene" : "available";
+
+    // Scenario G: If offline, queue locally
+    if (isOfflineSimulated) {
+      const op = {
+        opId: `OP-TEAM-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        teamId: data.team.id,
+        status: newStatus,
+        timestamp: new Date().toISOString(),
+      };
+      const nextQueue = [...offlineQueue, op];
+      setOfflineQueue(nextQueue);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("sdrep_rescue_offline_queue", JSON.stringify(nextQueue));
+      }
+      setFeedback(`[OFFLINE QUEUED] Team readiness update to '${newStatus}' saved locally.`);
+      setData((prev: any) => ({
+        ...prev,
+        team: { ...prev.team, status: newStatus },
+      }));
+      return;
+    }
+
     try {
       await api.rescue.updateTeamStatus(data.team.id, newStatus);
       setFeedback(`Team status updated to '${newStatus}'.`);
@@ -162,6 +294,25 @@ function RescueDashboardContent() {
   const handleReportSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!observation.trim()) return;
+
+    // Scenario G: If offline, queue locally
+    if (isOfflineSimulated) {
+      const op = {
+        opId: `OP-REPORT-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        teamId: data?.team?.id || "T1",
+        observation: observation.trim(),
+        incidentId: selectedIncident,
+        timestamp: new Date().toISOString(),
+      };
+      const nextQueue = [...offlineQueue, op];
+      setOfflineQueue(nextQueue);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("sdrep_rescue_offline_queue", JSON.stringify(nextQueue));
+      }
+      setFeedback(`[OFFLINE QUEUED] Field observation saved locally in queue.`);
+      setObservation("");
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -239,6 +390,87 @@ function RescueDashboardContent() {
           <span>{feedback}</span>
         </div>
       )}
+
+      {/* Scenario G: Offline Mode Simulation & Idempotent Sync Banner */}
+      <div className={`mb-5 rounded-lg border p-4 transition-colors ${
+        isOfflineSimulated
+          ? "border-warning/50 bg-warning/10"
+          : "border-border bg-surface-2"
+      }`}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className={`rounded-full p-2 ${isOfflineSimulated ? "bg-warning/20 text-warning" : "bg-success/20 text-success"}`}>
+              {isOfflineSimulated ? <WifiOff className="size-5" /> : <Wifi className="size-5" />}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-bold">
+                  {isOfflineSimulated ? "Offline Simulation Active (Scenario G)" : "Central Comms Feed Online"}
+                </h4>
+                <StatusPill tone={isOfflineSimulated ? "warning" : "success"}>
+                  {isOfflineSimulated ? `${offlineQueue.length} Queued Locally` : "Real-time Connected"}
+                </StatusPill>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {isOfflineSimulated
+                  ? "Field updates are buffered in browser localStorage with unique UUIDs. Upon reconnecting, they will sync idempotently without duplicate records."
+                  : "Field updates sync live to central Control Centre via WebSocket / SSE stream."}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleToggleOffline}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+                isOfflineSimulated
+                  ? "border border-border bg-surface-1 hover:bg-surface-3 text-foreground"
+                  : "border border-warning/40 bg-warning/10 hover:bg-warning/20 text-warning"
+              }`}
+            >
+              {isOfflineSimulated ? <Wifi className="size-3.5" /> : <WifiOff className="size-3.5" />}
+              {isOfflineSimulated ? "Restore Connection" : "Simulate Connection Loss (Scenario G)"}
+            </button>
+
+            {isOfflineSimulated && (
+              <button
+                onClick={handleReconnectAndSync}
+                disabled={syncingOffline || offlineQueue.length === 0}
+                className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1.5 shadow"
+              >
+                {syncingOffline ? <RefreshCw className="size-3.5 animate-spin" /> : <UploadCloud className="size-3.5" />}
+                {syncingOffline ? "Synchronising..." : `Reconnect & Sync (${offlineQueue.length})`}
+              </button>
+            )}
+
+            <button
+              onClick={handleTestDuplicateRetry}
+              className="rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors flex items-center gap-1.5"
+              title="Resend previously synced batch to confirm deduplication in audit logs"
+            >
+              <Database className="size-3.5" /> Test Duplicate Retry (Idempotency)
+            </button>
+          </div>
+        </div>
+
+        {/* Local Queue Detail drawer if items exist */}
+        {offlineQueue.length > 0 && (
+          <div className="mt-3 border-t border-border/60 pt-3">
+            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+              Pending Local Queue in Browser Storage ({offlineQueue.length} items):
+            </p>
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              {offlineQueue.map((op, idx) => (
+                <div key={op.opId} className="rounded border border-border bg-surface-1 px-2.5 py-1 flex items-center gap-1.5 font-mono">
+                  <span className="text-primary font-bold">#{idx + 1}</span>
+                  <span className="text-muted-foreground">{op.opId}</span>
+                  <span className="text-foreground font-semibold">[{op.status || "REPORT"}]</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* TAB 1: OPERATIONS OVERVIEW */}
       {activeTab === "overview" && (

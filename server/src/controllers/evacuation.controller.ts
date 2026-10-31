@@ -190,3 +190,43 @@ export async function getSectorsClearance(_req: Request, res: Response): Promise
 
   res.json({ success: true, data: sectors });
 }
+
+export async function getReachabilityAnalysis(_req: Request, res: Response): Promise<void> {
+  const engine = new DisasterRoutingEngine(
+    db.state.roadNodes,
+    db.state.roadEdges,
+    db.state.hazards
+  );
+
+  const analysis = engine.analyzeReachabilityBFS(
+    db.state.shelters,
+    db.state.hospitals,
+    db.state.incidents
+  );
+
+  res.json({
+    success: true,
+    data: analysis,
+  });
+}
+
+export async function compareCongestionRoutes(req: Request, res: Response): Promise<void> {
+  const { startNode = "N_S7", targetNode = "N_SH01" } = req.query as {
+    startNode?: string;
+    targetNode?: string;
+  };
+
+  const engine = new DisasterRoutingEngine(
+    db.state.roadNodes,
+    db.state.roadEdges,
+    db.state.hazards
+  );
+
+  const comparison = engine.compareCongestionRouting(startNode, targetNode);
+
+  res.json({
+    success: true,
+    data: comparison,
+  });
+}
+

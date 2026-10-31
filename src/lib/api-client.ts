@@ -60,12 +60,12 @@ export const api = {
       }),
     registerCitizen: (payload: {
       fullName: string;
-      email?: string;
-      mobile?: string;
+      email?: string | undefined;
+      mobile?: string | undefined;
       password: string;
-      sector?: string;
-      conditions?: string;
-      emergencyContact?: string;
+      sector?: string | undefined;
+      conditions?: string | undefined;
+      emergencyContact?: string | undefined;
     }) =>
       request<{ success: boolean; token: string; user: any; message: string }>("/auth/register-citizen", {
         method: "POST",
@@ -117,10 +117,39 @@ export const api = {
       request<{ success: boolean; message: string }>("/citizens/me/family/" + memberId, {
         method: "DELETE",
       }),
-    submitSOS: (payload: { sector?: string; headcount?: number; medicalUrgency?: boolean; notes?: string }) =>
+    submitSOS: (payload: {
+      pos: [number, number];
+      sector?: string | undefined;
+      address?: string | undefined;
+      emergencyType?: string | undefined;
+      severity?: string | undefined;
+      headcount?: number | undefined;
+      medicalUrgency?: boolean | undefined;
+      notes?: string | undefined;
+    }) =>
       request<{ success: boolean; message: string; data: any }>("/sos", {
         method: "POST",
         body: JSON.stringify(payload),
+      }),
+  },
+
+  incidents: {
+    getAll: () => request<{ success: boolean; data: any[] }>("/incidents"),
+    getById: (id: string) => request<{ success: boolean; data: any }>(`/incidents/${id}`),
+    getPriorityQueue: () => request<{ success: boolean; data: any[]; count: number }>("/incidents/priority-queue"),
+    create: (payload: { title: string; type: string; severity: string; sector: string; victims?: number; pos: [number, number]; description?: string }) =>
+      request<{ success: boolean; data: any }>("/incidents", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    update: (id: string, updates: any) =>
+      request<{ success: boolean; data: any }>(`/incidents/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(updates),
+      }),
+    close: (id: string) =>
+      request<{ success: boolean; data: any; message: string }>(`/incidents/${id}/close`, {
+        method: "POST",
       }),
   },
 
@@ -129,6 +158,20 @@ export const api = {
     getAllTeams: () => request<{ success: boolean; data: any[] }>("/rescue/teams"),
     getAllMissions: () => request<{ success: boolean; data: any[] }>("/rescue/missions"),
     getReports: () => request<{ success: boolean; data: any[] }>("/rescue/reports"),
+    getSuitableVehicles: (incidentId: string) =>
+      request<{ success: boolean; data: { incident: any; suitableVehicles: any[]; count: number } }>(`/rescue/suitable-vehicles?incidentId=${incidentId}`),
+    assignVehicle: (teamId: string, incidentId: string) =>
+      request<{ success: boolean; message: string; data: any }>("/rescue/assign-vehicle", {
+        method: "POST",
+        body: JSON.stringify({ teamId, incidentId }),
+      }),
+    getBaselineComparison: () =>
+      request<{ success: boolean; data: any }>("/rescue/baseline-comparison"),
+    syncOffline: (updates: any[]) =>
+      request<{ success: boolean; message: string; processedCount: number; deduplicatedCount: number; processedOpIds: string[] }>("/rescue/sync-offline", {
+        method: "POST",
+        body: JSON.stringify({ updates }),
+      }),
     updateMissionStatus: (missionId: string, status: string, outcomeReport?: string) =>
       request<{ success: boolean; message: string; data: any }>(`/rescue/missions/${missionId}/status`, {
         method: "PATCH",
@@ -169,6 +212,11 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify(payload),
       }),
+    updateCapacity: (shelterId: string, payload: { capacity?: number | undefined; occupancy?: number | undefined; status?: string | undefined }) =>
+      request<{ success: boolean; message: string; data: any }>(`/shelters/${shelterId}/capacity`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      }),
     requestSupplies: (shelterId: string, payload: { resource: string; quantity: number; urgency: string }) =>
       request<{ success: boolean; message: string; data: any }>(`/shelters/${shelterId}/supply-requests`, {
         method: "POST",
@@ -188,6 +236,11 @@ export const api = {
       request<{ success: boolean; message: string; data: any }>(`/hospitals/${id}/diversion`, {
         method: "POST",
         body: JSON.stringify({ diversion, reason }),
+      }),
+    updateCapacity: (id: string, payload: { bedsFree?: number | undefined; icuFree?: number | undefined; diversion?: boolean | undefined; diversionReason?: string | undefined }) =>
+      request<{ success: boolean; message: string; data: any }>(`/hospitals/${id}/capacity`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
       }),
     addTriageCase: (id: string, payload: { tag: string; desc: string }) =>
       request<{ success: boolean; message: string; data: any }>(`/hospitals/${id}/triage`, {
@@ -219,6 +272,14 @@ export const api = {
     },
   },
 
+  facilities: {
+    findSuitable: (payload: { type?: "HOSPITAL" | "SHELTER"; location: [number, number]; requiredBeds?: number; requiresICU?: boolean }) =>
+      request<{ success: boolean; data: any }>("/facilities/find-suitable", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+  },
+
   evacuation: {
     getCorridors: () => request<{ success: boolean; data: any }>("/evacuation/corridors"),
     getRoute: (startNode?: string, targetNode?: string, algorithm = "Dijkstra") =>
@@ -232,11 +293,23 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ state }),
       }),
+    getReachability: () =>
+      request<{ success: boolean; data: any }>("/evacuation/reachability"),
+    compareCongestion: (startNode?: string, targetNode?: string) =>
+      request<{ success: boolean; data: any }>(`/evacuation/congestion-comparison?startNode=${startNode || ""}&targetNode=${targetNode || ""}`),
   },
 
   analytics: {
     getOverview: () => request<{ success: boolean; data: any }>("/analytics/overview"),
     getBenchmark: () => request<{ success: boolean; results: any[] }>("/analytics/benchmark"),
     getAuditLogs: () => request<{ success: boolean; data: any[] }>("/analytics/audit-logs"),
+    getCongestionClusters: (k = 3) =>
+      request<{ success: boolean; data: { clusters: any[]; stagingRecommendations: any[]; observationCount: number; k: number } }>(`/analytics/congestion-clusters?k=${k}`),
+    runDynamicBenchmark: (payload: { requestCount: number; gridSize?: number }) =>
+      request<{ success: boolean; data: any }>("/analytics/benchmark-run", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
   },
 };
+

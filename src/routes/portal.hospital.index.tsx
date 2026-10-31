@@ -27,6 +27,7 @@ import { PortalShell, type PortalTabGroup } from "@/components/sdrep/PortalShell
 import { Bar, MetricCard, PageHeading, Panel, PanelHeader, StatusPill, EmptyState } from "@/components/sdrep/primitives";
 import { api } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
+import { ModalPortal } from "@/components/sdrep/ModalPortal";
 
 export const Route = createFileRoute("/portal/hospital/")({
   head: () => ({
@@ -950,52 +951,50 @@ function HospitalDashboardContent() {
       )}
 
       {/* Diversion Modal */}
-      {showDiversionModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-2xl">
-            <h3 className="text-base font-semibold text-foreground">
-              {isDiverting ? "Confirm Lifting Hospital Diversion" : "Declare Hospital Diversion"}
-            </h3>
-            <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
-              {isDiverting
-                ? "Resuming normal casualty reception will reopen EMS ambulance routing to City General Hospital."
-                : "Declaring diversion notifies the Disaster Command Centre and automatically reroutes incoming ambulances to HSP-2 and HSP-3."}
-            </p>
+      <ModalPortal
+        isOpen={showDiversionModal}
+        onClose={() => setShowDiversionModal(false)}
+        title={isDiverting ? "Confirm Lifting Hospital Diversion" : "Declare Hospital Diversion"}
+        maxWidth="max-w-md"
+      >
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          {isDiverting
+            ? "Resuming normal casualty reception will reopen EMS ambulance routing to City General Hospital."
+            : "Declaring diversion notifies the Disaster Command Centre and automatically reroutes incoming ambulances to HSP-2 and HSP-3."}
+        </p>
 
-            {!isDiverting && (
-              <div className="mt-4">
-                <label className="block text-xs text-muted-foreground">Diversion Rationale</label>
-                <input
-                  type="text"
-                  value={diversionReason}
-                  onChange={(e) => setDiversionReason(e.target.value)}
-                  className="mt-1 w-full rounded-md border border-input bg-surface-2 px-3 py-2 text-xs"
-                />
-              </div>
-            )}
-
-            <div className="mt-5 flex gap-2 justify-end">
-              <button
-                type="button"
-                onClick={() => setShowDiversionModal(false)}
-                className="rounded-md border border-border bg-surface-2 px-3 py-2 text-xs font-medium text-foreground"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={submitting}
-                onClick={handleToggleDiversion}
-                className={`rounded-md px-4 py-2 text-xs font-bold text-white ${
-                  isDiverting ? "bg-success" : "bg-critical"
-                }`}
-              >
-                {submitting ? "Transmitting…" : isDiverting ? "Confirm Resume Intake" : "Confirm Declare Diversion"}
-              </button>
-            </div>
+        {!isDiverting && (
+          <div className="mt-4">
+            <label className="block text-xs text-muted-foreground">Diversion Rationale</label>
+            <input
+              type="text"
+              value={diversionReason}
+              onChange={(e) => setDiversionReason(e.target.value)}
+              className="mt-1 w-full rounded-md border border-input bg-surface-2 px-3 py-2 text-xs"
+            />
           </div>
+        )}
+
+        <div className="mt-5 flex gap-2 justify-end">
+          <button
+            type="button"
+            onClick={() => setShowDiversionModal(false)}
+            className="rounded-md border border-border bg-surface-2 px-3 py-2 text-xs font-medium text-foreground cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={handleToggleDiversion}
+            className={`rounded-md px-4 py-2 text-xs font-bold text-white cursor-pointer ${
+              isDiverting ? "bg-success" : "bg-critical"
+            }`}
+          >
+            {submitting ? "Transmitting…" : isDiverting ? "Confirm Resume Intake" : "Confirm Declare Diversion"}
+          </button>
         </div>
-      )}
+      </ModalPortal>
     </PortalShell>
   );
 }

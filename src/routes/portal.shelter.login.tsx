@@ -21,8 +21,8 @@ import { api } from "@/lib/api-client";
 
 export const Route = createFileRoute("/portal/shelter/login")({
   validateSearch: (search: Record<string, unknown>): {
-    redirect?: string;
-    unauthorized?: string;
+    redirect?: string | undefined;
+    unauthorized?: string | undefined;
   } => ({
     redirect: (search["redirect"] as string) || undefined,
     unauthorized: (search["unauthorized"] as string) || undefined,
@@ -313,8 +313,8 @@ function ShelterLoginPage() {
 
       {/* Forgot Password Modal */}
       {showForgotModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-2xl">
+        <div className="fixed inset-0 z-modal-backdrop flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">
+          <div className="relative z-modal w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-2xl">
             <h3 className="text-base font-semibold text-foreground">Shelter Administrator Support</h3>
             <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
               Shelter administrator passkeys are managed under District Emergency Authority security policy. Enter your registered identifier to record a recovery request.

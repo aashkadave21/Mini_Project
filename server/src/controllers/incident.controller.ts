@@ -1,11 +1,23 @@
 import type { Response } from "express";
 import { db } from "../db/db.js";
 import { eventBus } from "../events/event-bus.js";
+import { prioritizeIncidentQueue } from "../algorithms/priority-queue.js";
 import type { AuthenticatedRequest } from "../middleware/auth.middleware.js";
 import type { Incident } from "../types/index.js";
 
 export async function getAllIncidents(_req: AuthenticatedRequest, res: Response): Promise<void> {
   res.json({ success: true, data: db.state.incidents });
+}
+
+export async function getPrioritizedIncidents(_req: AuthenticatedRequest, res: Response): Promise<void> {
+  const pendingIncidents = db.state.incidents.filter((i) => i.status !== "resolved" && i.status !== "cancelled");
+  const queue = prioritizeIncidentQueue(pendingIncidents.length > 0 ? pendingIncidents : db.state.incidents);
+  res.json({
+    success: true,
+    data: queue,
+    count: queue.length,
+    timestamp: new Date().toISOString(),
+  });
 }
 
 export async function getIncidentById(req: AuthenticatedRequest, res: Response): Promise<void> {

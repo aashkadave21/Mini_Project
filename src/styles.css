@@ -76,8 +76,17 @@
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
   --color-sidebar-accent: var(--sidebar-accent);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Global Layering (Z-Index) Tokens */
+  --z-base: 0;
+  --z-map: 1;
+  --z-header: 30;
+  --z-nav: 40;
+  --z-dropdown: 50;
+  --z-backdrop: 1000;
+  --z-modal: 1050;
+  --z-toast: 1200;
 
   --animate-pulse-ring: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   --animate-sweep: sweep 6s linear infinite;
@@ -87,6 +96,15 @@
 
 :root {
   --radius: 0.5rem;
+
+  --z-base: 0;
+  --z-map: 1;
+  --z-header: 30;
+  --z-nav: 40;
+  --z-dropdown: 50;
+  --z-backdrop: 1000;
+  --z-modal: 1050;
+  --z-toast: 1200;
 
   /* dark = default operational theme */
   --background: oklch(0.19 0.028 258);
@@ -331,13 +349,45 @@
   }
 }
 
-/* Leaflet theming */
+/* ==========================================================================
+   GLOBAL LAYERING & LEAFLET ISOLATION RULES
+   ========================================================================== */
+
+@utility z-modal-backdrop {
+  z-index: var(--z-backdrop, 1000) !important;
+}
+
+@utility z-modal {
+  z-index: var(--z-modal, 1050) !important;
+}
+
+@utility z-toast {
+  z-index: var(--z-toast, 1200) !important;
+}
+
+/* Leaflet theming & strict stacking context containment */
 .leaflet-container {
   background: var(--color-surface-2);
   font-family: var(--font-sans);
+  position: relative !important;
+  isolation: isolate !important;
+  z-index: var(--z-map, 1) !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
 }
+
+.tactical-map-container {
+  position: relative !important;
+  isolation: isolate !important;
+  z-index: var(--z-map, 1) !important;
+  overflow: hidden !important;
+}
+
+/* Internal Leaflet layers are scaled to stay strictly within the map container */
 .leaflet-tile-pane {
   filter: var(--map-filter, none);
+  z-index: 2 !important;
 }
 :root .leaflet-tile-pane {
   --map-filter: grayscale(0.75) invert(1) brightness(0.92) contrast(1.05) hue-rotate(185deg)
@@ -346,6 +396,38 @@
 .light .leaflet-tile-pane {
   --map-filter: grayscale(0.35) contrast(0.95) saturate(0.85);
 }
+
+.leaflet-overlay-pane {
+  z-index: 4 !important;
+}
+
+.leaflet-shadow-pane {
+  z-index: 5 !important;
+}
+
+.leaflet-marker-pane {
+  z-index: 6 !important;
+}
+
+.leaflet-tooltip-pane {
+  z-index: 7 !important;
+}
+
+.leaflet-popup-pane {
+  z-index: 8 !important;
+}
+
+/* Confine Leaflet controls to stay within the map and never exceed outer UI */
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 10 !important;
+}
+
+.leaflet-control {
+  position: relative;
+  z-index: 10 !important;
+}
+
 .leaflet-control-attribution,
 .leaflet-bar a {
   background: var(--color-surface) !important;

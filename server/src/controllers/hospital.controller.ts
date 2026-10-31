@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { db } from "../db/db.js";
 import { eventBus } from "../events/event-bus.js";
-import { prioritizeTriageQueue } from "../algorithms/resource-allocation.js";
+import { prioritizeTriageQueue, findSuitableFacility } from "../algorithms/resource-allocation.js";
 import type { AuthenticatedRequest } from "../middleware/auth.middleware.js";
 import type { TriageCase, AmbulanceArrival } from "../types/index.js";
 
@@ -244,4 +244,67 @@ export async function updateBloodStock(req: AuthenticatedRequest, res: Response)
     data: db.state.bloodInventory,
   });
 }
+
+export async function updateHospitalCapacity(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { id } = req.params;
+  const { bedsFree, icuFree, diversion, diversionReason } = req.body;
+
+  const hospital = db.state.hospitals.find((h) => h.id === id);
+  if (!hospital) {
+    res.status(404).json({ success: false, message: `Hospital ${id} not found.` });
+    return;
+  }
+
+  await db.withTransaction(async (state) => {
+    const idx = state.hospitals.findIndex((h) => h.id === id);
+    if (idx !== -1) {
+      if (bedsFree !== undefined) state.hospitals[idx]!.bedsFree = Math.max(0, Number(bedsFree));
+      if (icuFree !== undefined) state.hospitals[idx]!.icuFree = Math.max(0, Number(icuFree));
+      if (diversion !== undefined) state.hospitals[idx]!.diversion = Boolean(diversion);
+      if (diversionReason !== undefined) state.hospitals[idx]!.diversionReason = diversionReason;
+      state.hospitals[idx]!.updatedAt = new Date().toISOString();
+    }
+  });
+
+  const updated = db.state.hospitals.find((h) => h.id === id)!;
+  await db.logAudit(req.user?.username || "OPERATOR", req.user?.role || "OPERATOR", "UPDATE_HOSPITAL_CAPACITY", id!, {
+    bedsFree,
+    icuFree,
+    diversion,
+  });
+
+  eventBus.broadcast("HOSPITAL_DIVERSION_CHANGED", updated);
+
+  res.json({
+    success: true,
+    message: `Hospital ${hospital.name} capacity updated (Beds free: ${updated.bedsFree}, ICU free: ${updated.icuFree}, Diversion: ${updated.diversion}).`,
+    data: updated,
+  });
+}
+
+export async function findSuitableFacilityEndpoint(req: Request, res: Response): Promise<void> {
+  const { type = "HOSPITAL", location, requiredBeds = 1, requiresICU = false } = req.body;
+
+  if (!location || !Array.isArray(location) || location.length !== 2) {
+    res.status(400).json({ success: false, error: "ValidationError", message: "location [lat, lng] is required." });
+    return;
+  }
+
+  const result = findSuitableFacility(
+    type as "HOSPITAL" | "SHELTER",
+    location as [number, number],
+    {
+      hospitals: db.state.hospitals,
+      shelters: db.state.shelters,
+      requiredBeds: Number(requiredBeds),
+      requiresICU: Boolean(requiresICU),
+    }
+  );
+
+  res.json({
+    success: result.suitable,
+    data: result,
+  });
+}
+
 

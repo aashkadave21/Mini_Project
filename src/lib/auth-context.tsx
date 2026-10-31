@@ -60,12 +60,12 @@ interface AuthContextType {
   login: (credentials: { username: string; password: string; expectedRole?: string; rememberMe?: boolean }) => Promise<UserSession>;
   registerCitizen: (payload: {
     fullName: string;
-    email?: string;
-    mobile?: string;
+    email?: string | undefined;
+    mobile?: string | undefined;
     password: string;
-    sector?: string;
-    conditions?: string;
-    emergencyContact?: string;
+    sector?: string | undefined;
+    conditions?: string | undefined;
+    emergencyContact?: string | undefined;
   }) => Promise<UserSession>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<UserSession | null>;
@@ -151,12 +151,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const registerCitizen = async (payload: {
     fullName: string;
-    email?: string;
-    mobile?: string;
+    email?: string | undefined;
+    mobile?: string | undefined;
     password: string;
-    sector?: string;
-    conditions?: string;
-    emergencyContact?: string;
+    sector?: string | undefined;
+    conditions?: string | undefined;
+    emergencyContact?: string | undefined;
   }): Promise<UserSession> => {
     setIsLoading(true);
     try {

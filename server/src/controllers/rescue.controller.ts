@@ -1,7 +1,12 @@
 import type { Response } from "express";
 import { db } from "../db/db.js";
 import { eventBus } from "../events/event-bus.js";
-import { allocateRescueTeams } from "../algorithms/resource-allocation.js";
+import {
+  allocateRescueTeams,
+  findSuitableVehiclesForIncident,
+  compareAllocationWithBaseline,
+  isVehicleCompatible,
+} from "../algorithms/resource-allocation.js";
 import type { AuthenticatedRequest } from "../middleware/auth.middleware.js";
 
 export async function getAllTeams(_req: AuthenticatedRequest, res: Response): Promise<void> {
@@ -300,4 +305,239 @@ export async function getMissionReports(_req: AuthenticatedRequest, res: Respons
 
   res.json({ success: true, data: combined });
 }
+
+export async function getSuitableVehicles(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const incidentId = (req.query.incidentId as string) || (req.params.incidentId as string);
+  if (!incidentId) {
+    res.status(400).json({ success: false, error: "ValidationError", message: "incidentId is required." });
+    return;
+  }
+
+  const incident = db.state.incidents.find((i) => i.id === incidentId);
+  if (!incident) {
+    res.status(404).json({ success: false, message: `Incident ${incidentId} not found.` });
+    return;
+  }
+
+  const suitable = findSuitableVehiclesForIncident(incident, db.state.rescueTeams);
+  res.json({
+    success: true,
+    data: {
+      incident,
+      suitableVehicles: suitable,
+      count: suitable.length,
+    },
+  });
+}
+
+export async function assignVehicleAtomic(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { teamId, incidentId } = req.body;
+
+  if (!teamId || !incidentId) {
+    res.status(400).json({ success: false, error: "ValidationError", message: "teamId and incidentId are required." });
+    return;
+  }
+
+  const team = db.state.rescueTeams.find((t) => t.id === teamId);
+  if (!team) {
+    res.status(404).json({ success: false, error: "NotFound", message: `Rescue vehicle ${teamId} not found.` });
+    return;
+  }
+
+  const incident = db.state.incidents.find((i) => i.id === incidentId);
+  if (!incident) {
+    res.status(404).json({ success: false, error: "NotFound", message: `Incident ${incidentId} not found.` });
+    return;
+  }
+
+  // Capability check (Scenario C)
+  if (!isVehicleCompatible(team.unit, incident.type)) {
+    res.status(400).json({
+      success: false,
+      error: "IncompatibleVehicle",
+      message: `Vehicle ${team.callsign} (${team.unit}) is not equipped for ${incident.type.toUpperCase()} incidents.`,
+    });
+    return;
+  }
+
+  // Atomic state transaction with double-booking prevention (Scenario E)
+  try {
+    const result = await db.withTransaction(async (state) => {
+      const t = state.rescueTeams.find((item) => item.id === teamId);
+      if (!t) throw new Error(`Vehicle ${teamId} not found.`);
+
+      // Strict race condition check: if another concurrent request booked this vehicle first
+      if (t.status !== "available" || (t.mission !== null && t.mission !== undefined)) {
+        const conflictErr: any = new Error(
+          `Double-booking prevented: Vehicle ${t.callsign} (${t.id}) is already assigned to mission ${t.mission || t.status}. Concurrent assignment rejected.`
+        );
+        conflictErr.name = "ConflictError";
+        conflictErr.statusCode = 409;
+        conflictErr.details = {
+          vehicleId: t.id,
+          callsign: t.callsign,
+          status: t.status,
+          assignedMission: t.mission,
+        };
+        throw conflictErr;
+      }
+
+      // Update vehicle state
+      t.status = "en-route";
+      t.mission = incidentId;
+      t.updatedAt = new Date().toISOString();
+
+      // Update incident state
+      const inc = state.incidents.find((i) => i.id === incidentId);
+      if (inc) {
+        inc.status = "dispatched";
+        inc.updatedAt = new Date().toISOString();
+      }
+
+      // Create or update mission record
+      let mission = state.rescueMissions.find((m) => m.incidentId === incidentId);
+      if (mission) {
+        mission.assignedTeamId = teamId;
+        mission.status = "EN_ROUTE";
+      } else {
+        mission = {
+          id: `MIS-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          incidentId,
+          assignedTeamId: teamId,
+          status: "EN_ROUTE",
+          victimsCount: incident.victims || 1,
+          createdAt: new Date().toISOString(),
+        };
+        state.rescueMissions.push(mission);
+      }
+
+      return { team: t, incident: inc, mission };
+    });
+
+    await db.logAudit(
+      req.user?.username || "OPERATOR",
+      req.user?.role || "OPERATOR",
+      "ASSIGN_VEHICLE_ATOMIC",
+      teamId,
+      { incidentId, callsign: team.callsign, unit: team.unit }
+    );
+
+    eventBus.broadcast("MISSION_UPDATED", result.mission);
+    eventBus.broadcast("INCIDENT_UPDATED", result.incident);
+
+    res.json({
+      success: true,
+      message: `Vehicle ${result.team.callsign} successfully dispatched to Incident ${incidentId}.`,
+      data: result,
+    });
+  } catch (err: any) {
+    if (err.statusCode === 409 || err.name === "ConflictError") {
+      res.status(409).json({
+        success: false,
+        error: "Conflict",
+        message: err.message,
+        details: err.details,
+      });
+      return;
+    }
+    res.status(500).json({ success: false, error: "InternalError", message: err.message });
+  }
+}
+
+export async function getAllocationComparison(_req: AuthenticatedRequest, res: Response): Promise<void> {
+  const unassigned = db.state.incidents.filter(
+    (i) => i.status !== "resolved" && i.status !== "cancelled" && i.status !== "dispatched" && i.status !== "on-scene"
+  );
+  const incidents = unassigned.length > 0 ? unassigned : db.state.incidents;
+  const comparison = compareAllocationWithBaseline(incidents, db.state.rescueTeams);
+  res.json({
+    success: true,
+    data: comparison,
+  });
+}
+
+export async function syncOfflineMissionUpdates(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const { updates } = req.body as {
+    updates: Array<{
+      opId: string;
+      teamId: string;
+      status?: "available" | "en-route" | "on-scene" | "returning" | "offline";
+      fuel?: number;
+      observation?: string;
+      incidentId?: string;
+      timestamp: string;
+    }>;
+  };
+
+  if (!Array.isArray(updates)) {
+    res.status(400).json({ success: false, error: "ValidationError", message: "updates array is required." });
+    return;
+  }
+
+  let processedCount = 0;
+  let deduplicatedCount = 0;
+  const processedOpIds: string[] = [];
+
+  await db.withTransaction(async (state) => {
+    for (const op of updates) {
+      if (!op.opId) continue;
+
+      // Idempotency check: see if this opId was already recorded in audit logs
+      const alreadyApplied = state.auditLogs.some(
+        (log) => log.details?.opId === op.opId
+      );
+
+      if (alreadyApplied) {
+        deduplicatedCount++;
+        continue;
+      }
+
+      // Apply the update to team
+      const tIdx = state.rescueTeams.findIndex((t) => t.id === op.teamId);
+      if (tIdx !== -1) {
+        if (op.status) state.rescueTeams[tIdx]!.status = op.status;
+        if (op.fuel !== undefined) state.rescueTeams[tIdx]!.fuel = Math.min(100, Math.max(0, op.fuel));
+        state.rescueTeams[tIdx]!.updatedAt = new Date().toISOString();
+      }
+
+      // If there is an observation, record it
+      if (op.observation && op.incidentId) {
+        state.auditLogs.unshift({
+          id: `AUD-SYNC-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          timestamp: op.timestamp || new Date().toISOString(),
+          actor: req.user?.username || op.teamId,
+          role: "RESCUE_TEAM",
+          action: "SUBMIT_FIELD_REPORT",
+          target: op.incidentId,
+          details: { observation: op.observation, opId: op.opId, syncedOffline: true },
+        });
+      }
+
+      // Record sync audit for idempotency deduplication
+      state.auditLogs.unshift({
+        id: `AUD-OP-${op.opId}`,
+        timestamp: new Date().toISOString(),
+        actor: req.user?.username || op.teamId,
+        role: "RESCUE_TEAM",
+        action: "OFFLINE_OP_SYNC",
+        target: op.teamId,
+        details: { opId: op.opId, status: op.status, fuel: op.fuel, originalTimestamp: op.timestamp },
+      });
+
+      processedOpIds.push(op.opId);
+      processedCount++;
+    }
+  });
+
+  eventBus.broadcast("MISSION_UPDATED", { syncedOps: processedOpIds.length });
+
+  res.json({
+    success: true,
+    message: `Offline synchronization completed: ${processedCount} operation(s) applied, ${deduplicatedCount} duplicate(s) safely ignored.`,
+    processedCount,
+    deduplicatedCount,
+    processedOpIds,
+  });
+}
+
 

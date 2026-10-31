@@ -160,63 +160,113 @@ export async function submitSOS(req: AuthenticatedRequest, res: Response): Promi
     : db.state.citizenProfiles.find((c) => c.userId === req.user?.userId);
 
   const {
-    sector = citizenProfile?.sector || "Unknown Sector",
+    sector = citizenProfile?.sector || "Sector 7 · Riverside",
     headcount = 1,
     medicalUrgency = false,
+    emergencyType = "medical",
+    severity = "critical",
+    address,
     notes,
-    pos = [19.092, 72.862],
+    pos,
   } = req.body;
 
-  // Check 15-second debounce window
+  // Strict location validation — do NOT silently fallback to default coordinates
+  if (
+    !pos ||
+    !Array.isArray(pos) ||
+    pos.length !== 2 ||
+    typeof pos[0] !== "number" ||
+    typeof pos[1] !== "number" ||
+    isNaN(pos[0]) ||
+    isNaN(pos[1]) ||
+    pos[0] < -90 ||
+    pos[0] > 90 ||
+    pos[1] < -180 ||
+    pos[1] > 180
+  ) {
+    res.status(400).json({
+      success: false,
+      error: "ValidationError",
+      message: "Explicit and valid geographic coordinates [latitude, longitude] are required. Please select or pin your location on the map.",
+    });
+    return;
+  }
+
+  // Check 5-second anti-spam debounce window
   const lastTime = recentSosSubmissions.get(citizenId);
   const now = Date.now();
-  if (lastTime && now - lastTime < 15000) {
+  if (lastTime && now - lastTime < 5000) {
     res.status(429).json({
       success: false,
       error: "DuplicateSubmission",
-      message: "An emergency SOS has already been recorded in the last 15 seconds. Emergency teams have been notified.",
+      message: "An emergency SOS was already transmitted in the last 5 seconds. Dispatch operators are processing your request.",
     });
     return;
   }
   recentSosSubmissions.set(citizenId, now);
 
-  // Dynamically assign nearest available rescue team
-  const availableTeam = db.state.rescueTeams.find((t) => t.status === "available") ||
-    db.state.rescueTeams.find((t) => t.status === "returning") ||
-    db.state.rescueTeams[0];
-
+  const incidentId = `INC-${Math.floor(1000 + Math.random() * 9000)}`;
   const sosId = `SOS-${Math.floor(1000 + Math.random() * 9000)}`;
+  const resolvedPos: [number, number] = [Number(pos[0].toFixed(5)), Number(pos[1].toFixed(5))];
+
   const sosRecord: SOSRequest = {
     id: sosId,
     citizenId,
     senderName,
     sector,
-    pos,
+    pos: resolvedPos,
     headcount: Number(headcount) || 1,
     medicalUrgency: Boolean(medicalUrgency),
-    notes: notes || "Immediate evacuation requested via SOS button.",
+    notes: notes || `Immediate crisis response requested via SOS [${String(emergencyType).toUpperCase()}].`,
     status: "RECEIVED",
     createdAt: new Date().toISOString(),
-    assignedTeamId: availableTeam?.id,
+  };
+
+  const incidentRecord: Incident = {
+    id: incidentId,
+    title: `${String(emergencyType || (medicalUrgency ? "medical" : "emergency")).toUpperCase()} SOS: ${address || sector}`,
+    type: (["flood", "fire", "collapse", "medical", "landslide", "chemical"].includes(emergencyType) ? emergencyType : "medical") as any,
+    severity: (["critical", "warning", "info", "success"].includes(severity) ? severity : "critical") as any,
+    sector,
+    reported: new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }),
+    victims: Number(headcount) || 1,
+    status: "unassigned",
+    pos: resolvedPos,
+    description: `${notes || "Citizen SOS emergency extraction requested."} [Address: ${address || "Pinned GPS Coordinates"}]`,
+    createdBy: citizenId,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   };
 
   await db.withTransaction(async (state) => {
     state.sosRequests.unshift(sosRecord);
+    state.incidents.unshift(incidentRecord);
   });
 
-  await db.logAudit(senderName, "CITIZEN", "EMERGENCY_SOS_SUBMISSION", sosId, { sector, headcount, medicalUrgency });
+  await db.logAudit(senderName, "CITIZEN", "EMERGENCY_SOS_SUBMISSION", sosId, {
+    incidentId,
+    sector,
+    address,
+    pos: resolvedPos,
+    headcount,
+    medicalUrgency,
+    emergencyType,
+  });
+
   eventBus.broadcast("SOS_ALERT", sosRecord);
+  eventBus.broadcast("INCIDENT_UPDATED", incidentRecord);
 
   res.status(201).json({
     success: true,
-    message: availableTeam
-      ? `SOS received by Disaster Control Centre. Dispatched to ${availableTeam.callsign} · ${availableTeam.unit}.`
-      : "SOS received by Disaster Control Centre. All units currently deployed — coordinating response.",
+    message: `Emergency SOS recorded at [${resolvedPos[0].toFixed(4)}, ${resolvedPos[1].toFixed(4)}]. Incident ${incidentId} transmitted to Disaster Control Centre.`,
     data: {
       sosId: sosRecord.id,
-      status: availableTeam ? "DISPATCHED" : "RECEIVED",
-      assignedUnit: availableTeam ? `${availableTeam.callsign} · ${availableTeam.unit}` : "Pending assignment",
-      eta: availableTeam?.eta || "ETA being calculated",
+      incidentId: incidentRecord.id,
+      status: "RECEIVED",
+      pos: resolvedPos,
+      address: address || `${resolvedPos[0].toFixed(4)}, ${resolvedPos[1].toFixed(4)}`,
+      assignedUnit: "Pending operator assignment",
+      eta: "Awaiting vehicle dispatch",
       timestamp: sosRecord.createdAt,
     },
   });
@@ -230,23 +280,52 @@ export async function syncOfflineQueue(req: AuthenticatedRequest, res: Response)
   const processed = [];
   for (const op of operations) {
     if (op.action === "SOS") {
+      const pos: [number, number] = Array.isArray(op.payload?.pos) && op.payload.pos.length === 2
+        ? [Number(op.payload.pos[0]), Number(op.payload.pos[1])]
+        : [19.092, 72.862];
+      const sosId = `SOS-OFFLINE-${Math.floor(1000 + Math.random() * 9000)}`;
+      const incId = `INC-OFFLINE-${Math.floor(1000 + Math.random() * 9000)}`;
+
       const sosRecord: SOSRequest = {
-        id: `SOS-OFFLINE-${Math.floor(1000 + Math.random() * 9000)}`,
+        id: sosId,
         citizenId,
         senderName,
         sector: op.payload?.sector || "Unknown Sector",
+        pos,
         headcount: op.payload?.headcount || 1,
         medicalUrgency: true,
         notes: "Queued during radio mesh outage; synced upon reconnect.",
         status: "RECEIVED",
         createdAt: op.payload?.timestamp || new Date().toISOString(),
       };
-      db.state.sosRequests.unshift(sosRecord);
-      processed.push({ opId: op.id, status: "SYNCED", recordId: sosRecord.id });
+
+      const incRecord: Incident = {
+        id: incId,
+        title: `OFFLINE SYNCED SOS: ${op.payload?.sector || "Unknown Sector"}`,
+        type: "medical",
+        severity: "critical",
+        sector: op.payload?.sector || "Unknown Sector",
+        reported: new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }),
+        victims: Number(op.payload?.headcount) || 1,
+        status: "unassigned",
+        pos,
+        description: "Emergency request queued offline during network outage, synchronized upon reconnect.",
+        createdBy: citizenId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      await db.withTransaction(async (state) => {
+        state.sosRequests.unshift(sosRecord);
+        state.incidents.unshift(incRecord);
+      });
+
+      eventBus.broadcast("SOS_ALERT", sosRecord);
+      eventBus.broadcast("INCIDENT_UPDATED", incRecord);
+      processed.push({ opId: op.id, status: "SYNCED", recordId: sosRecord.id, incidentId: incId });
     }
   }
 
-  db.saveToFile();
   res.json({
     success: true,
     message: `Synchronized ${processed.length} offline operational items with server database.`,

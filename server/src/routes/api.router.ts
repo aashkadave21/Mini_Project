@@ -15,6 +15,7 @@ import {
 } from "../controllers/public.controller.js";
 import {
   getAllIncidents,
+  getPrioritizedIncidents,
   getIncidentById,
   createIncident,
   updateIncident,
@@ -26,6 +27,8 @@ import {
   recalculateAllRoutes,
   toggleRoadState,
   getSectorsClearance,
+  getReachabilityAnalysis,
+  compareCongestionRoutes,
 } from "../controllers/evacuation.controller.js";
 import {
   getAllShelters,
@@ -36,6 +39,7 @@ import {
   checkoutEvacuee,
   getEvacueesList,
   updateInventory,
+  updateShelterCapacity,
 } from "../controllers/shelter.controller.js";
 import {
   getAllTeams,
@@ -46,6 +50,10 @@ import {
   autoAllocateMissions,
   updateTeamStatus,
   getMissionReports,
+  getSuitableVehicles,
+  assignVehicleAtomic,
+  getAllocationComparison,
+  syncOfflineMissionUpdates,
 } from "../controllers/rescue.controller.js";
 import {
   getAllHospitals,
@@ -56,6 +64,8 @@ import {
   updateTriageStatus,
   confirmAmbulanceArrival,
   updateBloodStock,
+  updateHospitalCapacity,
+  findSuitableFacilityEndpoint,
 } from "../controllers/hospital.controller.js";
 import {
   getCitizenProfile,
@@ -72,6 +82,8 @@ import {
   getAnalyticsOverview,
   getAlgorithmBenchmark,
   getAuditLogs,
+  getCongestionClusters,
+  runBenchmarkEndpoint,
 } from "../controllers/analytics.controller.js";
 import { authenticate, optionalAuthenticate, requireRole } from "../middleware/auth.middleware.js";
 import { eventBus } from "../events/event-bus.js";
@@ -128,6 +140,7 @@ apiRouter.get("/public/alerts", getPublicAlerts);
 apiRouter.get("/public/statistics", getPublicStatistics);
 
 // --- Incidents & Hazards ---
+apiRouter.get("/incidents/priority-queue", getPrioritizedIncidents);
 apiRouter.get("/incidents", getAllIncidents);
 apiRouter.get("/incidents/:id", getIncidentById);
 apiRouter.post("/incidents", optionalAuthenticate, createIncident);
@@ -140,6 +153,8 @@ apiRouter.get("/evacuation/route", computeRoute);
 apiRouter.post("/evacuation/route/recalculate", optionalAuthenticate, recalculateAllRoutes);
 apiRouter.post("/evacuation/roads/:id/toggle", optionalAuthenticate, toggleRoadState);
 apiRouter.get("/evacuation/sectors", getSectorsClearance);
+apiRouter.get("/evacuation/reachability", getReachabilityAnalysis);
+apiRouter.get("/evacuation/congestion-comparison", compareCongestionRoutes);
 
 // --- Shelters & Intake ---
 apiRouter.get("/shelters", getAllShelters);
@@ -148,6 +163,7 @@ apiRouter.get("/shelters/:id/evacuees", getEvacueesList);
 apiRouter.post("/shelters/:id/intake", optionalAuthenticate, registerEvacueeIntake);
 apiRouter.post("/shelters/:id/checkout", optionalAuthenticate, checkoutEvacuee);
 apiRouter.patch("/shelters/:id/inventory", optionalAuthenticate, updateInventory);
+apiRouter.patch("/shelters/:id/capacity", optionalAuthenticate, updateShelterCapacity);
 apiRouter.post("/shelters/:id/supply-requests", optionalAuthenticate, createSupplyRequest);
 apiRouter.post("/shelters/:id/volunteers", optionalAuthenticate, updateVolunteerRoster);
 
@@ -156,15 +172,21 @@ apiRouter.get("/rescue/teams", getAllTeams);
 apiRouter.get("/rescue/missions", getAllMissions);
 apiRouter.get("/rescue/active", getActiveMissionDetails);
 apiRouter.get("/rescue/reports", getMissionReports);
+apiRouter.get("/rescue/suitable-vehicles", getSuitableVehicles);
+apiRouter.post("/rescue/assign-vehicle", optionalAuthenticate, assignVehicleAtomic);
+apiRouter.get("/rescue/baseline-comparison", getAllocationComparison);
+apiRouter.post("/rescue/sync-offline", optionalAuthenticate, syncOfflineMissionUpdates);
 apiRouter.patch("/rescue/missions/:id/status", optionalAuthenticate, updateMissionStatus);
 apiRouter.patch("/rescue/teams/:id/status", optionalAuthenticate, updateTeamStatus);
 apiRouter.post("/rescue/missions/:id/reports", optionalAuthenticate, submitIncidentReport);
 apiRouter.post("/rescue/auto-allocate", optionalAuthenticate, autoAllocateMissions);
 
-// --- Hospitals & Triage ---
+// --- Hospitals & Facilities ---
 apiRouter.get("/hospitals", getAllHospitals);
 apiRouter.get("/hospitals/:id", getHospitalDetails);
 apiRouter.post("/hospitals/:id/diversion", optionalAuthenticate, declareHospitalDiversion);
+apiRouter.patch("/hospitals/:id/capacity", optionalAuthenticate, updateHospitalCapacity);
+apiRouter.post("/facilities/find-suitable", findSuitableFacilityEndpoint);
 apiRouter.post("/hospitals/:id/triage", optionalAuthenticate, addTriageCase);
 apiRouter.patch("/hospitals/:id/triage/:caseId", optionalAuthenticate, updateTriageStatus);
 apiRouter.post("/hospitals/:id/ambulances", optionalAuthenticate, registerAmbulanceArrival);
@@ -185,4 +207,8 @@ apiRouter.post("/offline/sync", optionalAuthenticate, syncOfflineQueue);
 // --- Analytics & Evaluation ---
 apiRouter.get("/analytics/overview", getAnalyticsOverview);
 apiRouter.get("/analytics/benchmark", getAlgorithmBenchmark);
+apiRouter.post("/analytics/benchmark-run", runBenchmarkEndpoint);
+apiRouter.get("/analytics/congestion-clusters", getCongestionClusters);
+apiRouter.post("/analytics/congestion-clusters", getCongestionClusters);
 apiRouter.get("/analytics/audit-logs", optionalAuthenticate, getAuditLogs);
+

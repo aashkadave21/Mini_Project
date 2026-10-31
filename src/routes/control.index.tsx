@@ -14,6 +14,16 @@ import {
   Users,
   WifiOff,
   RefreshCw,
+  ShieldAlert,
+  CheckCircle2,
+  X,
+  Zap,
+  Crosshair,
+  Activity,
+  Clock,
+  ShieldCheck,
+  Flame,
+  Waves,
 } from "lucide-react";
 import {
   Area,
@@ -32,6 +42,7 @@ import {
   YAxis,
 } from "recharts";
 import { MapCanvas } from "@/components/sdrep/MapCanvas";
+import { ModalPortal } from "@/components/sdrep/ModalPortal";
 import { Bar, MetricCard, Panel, PanelHeader, StatusPill } from "@/components/sdrep/primitives";
 import { api } from "@/lib/api-client";
 
@@ -76,22 +87,33 @@ function ControlDashboard() {
   const [shelters, setShelters] = useState<any[]>([]);
   const [hospitals, setHospitals] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
+  const [roads, setRoads] = useState<any[]>([]);
+  const [priorityQueue, setPriorityQueue] = useState<any[]>([]);
   const [analytics, setAnalytics] = useState<any>(null);
   const [stats, setStats] = useState<any>(null);
   const [routes, setRoutes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<string>("");
 
+  // Interactive Incident Drawer & Scenario Evaluation State
+  const [selectedIncident, setSelectedIncident] = useState<any | null>(null);
+  const [compatibleVehicles, setCompatibleVehicles] = useState<any[]>([]);
+  const [loadingVehicles, setLoadingVehicles] = useState(false);
+  const [dispatchFeedback, setDispatchFeedback] = useState<string | null>(null);
+  const [raceFeedback, setRaceFeedback] = useState<{ attempt1?: string; attempt2?: string; error?: string } | null>(null);
+  const [facilityRecommendation, setFacilityRecommendation] = useState<any | null>(null);
+
   const fetchAll = useCallback(async () => {
     try {
-      const [incRes, shelterRes, hospitalRes, teamRes, analyticsRes, statsRes, routeRes] = await Promise.allSettled([
+      const [incRes, shelterRes, hospitalRes, teamRes, analyticsRes, statsRes, routeRes, queueRes] = await Promise.allSettled([
         api.public.getIncidents(),
-        fetch("http://localhost:3001/api/v1/shelters").then((r) => r.json()),
-        fetch("http://localhost:3001/api/v1/hospitals").then((r) => r.json()),
-        fetch("http://localhost:3001/api/v1/rescue/teams").then((r) => r.json()),
+        api.shelter.getAll(),
+        api.hospital.getAll(),
+        api.rescue.getAllTeams(),
         api.analytics.getOverview(),
         api.public.getStatistics(),
         api.evacuation.getCorridors(),
+        api.incidents.getPriorityQueue(),
       ]);
 
       if (incRes.status === "fulfilled" && incRes.value.data) setIncidents(incRes.value.data);
@@ -100,7 +122,11 @@ function ControlDashboard() {
       if (teamRes.status === "fulfilled" && teamRes.value.data) setTeams(teamRes.value.data);
       if (analyticsRes.status === "fulfilled" && analyticsRes.value.data) setAnalytics(analyticsRes.value.data);
       if (statsRes.status === "fulfilled" && statsRes.value.data) setStats(statsRes.value.data);
-      if (routeRes.status === "fulfilled" && routeRes.value.data) setRoutes(routeRes.value.data.routes || []);
+      if (routeRes.status === "fulfilled" && routeRes.value.data) {
+        setRoutes(routeRes.value.data.routes || []);
+        setRoads(routeRes.value.data.roads || []);
+      }
+      if (queueRes.status === "fulfilled" && queueRes.value.data) setPriorityQueue(queueRes.value.data);
 
       setLastUpdated(new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
     } catch (err) {
@@ -109,6 +135,73 @@ function ControlDashboard() {
       setLoading(false);
     }
   }, []);
+
+  const handleSelectIncident = async (inc: any) => {
+    setSelectedIncident(inc);
+    setDispatchFeedback(null);
+    setRaceFeedback(null);
+    setFacilityRecommendation(null);
+    setLoadingVehicles(true);
+    try {
+      const res = await api.rescue.getSuitableVehicles(inc.id);
+      if (res.data?.suitableVehicles) {
+        setCompatibleVehicles(res.data.suitableVehicles);
+      }
+    } catch (err: any) {
+      console.warn("Failed to load suitable vehicles for incident:", err);
+    } finally {
+      setLoadingVehicles(false);
+    }
+  };
+
+  const handleAssignVehicle = async (teamId: string) => {
+    if (!selectedIncident) return;
+    try {
+      const res = await api.rescue.assignVehicle(teamId, selectedIncident.id);
+      setDispatchFeedback(res.message);
+      await fetchAll();
+      handleSelectIncident({ ...selectedIncident, status: "dispatched" });
+    } catch (err: any) {
+      setDispatchFeedback(`Assignment error: ${err.message}`);
+    }
+  };
+
+  const handleSimulateRaceCondition = async (teamId: string) => {
+    if (!selectedIncident) return;
+    setRaceFeedback({ attempt1: "Firing simultaneous Request 1...", attempt2: "Firing simultaneous Request 2..." });
+    try {
+      const [p1, p2] = await Promise.allSettled([
+        api.rescue.assignVehicle(teamId, selectedIncident.id),
+        api.rescue.assignVehicle(teamId, selectedIncident.id),
+      ]);
+
+      const att1 = p1.status === "fulfilled" ? `Req #1 SUCCESS (HTTP 200): ${p1.value.message}` : `Req #1 FAILED: ${(p1 as any).reason.message}`;
+      const att2 = p2.status === "fulfilled" ? `Req #2 SUCCESS: ${p2.value.message}` : `Req #2 REJECTED (HTTP 409 Conflict): ${(p2 as any).reason.message}`;
+
+      setRaceFeedback({
+        attempt1: att1,
+        attempt2: att2,
+      });
+      await fetchAll();
+    } catch (err: any) {
+      setRaceFeedback({ error: err.message });
+    }
+  };
+
+  const handleFindFacility = async () => {
+    if (!selectedIncident) return;
+    try {
+      const res = await api.facilities.findSuitable({
+        type: "HOSPITAL",
+        location: selectedIncident.pos,
+        requiredBeds: selectedIncident.victims || 1,
+      });
+      setFacilityRecommendation(res.data);
+    } catch (err: any) {
+      setFacilityRecommendation({ error: err.message });
+    }
+  };
+
 
   useEffect(() => {
     fetchAll();
@@ -264,7 +357,16 @@ function ControlDashboard() {
             }
           />
           <div className="p-2">
-            <MapCanvas height="clamp(360px, 52vh, 620px)" />
+            <MapCanvas
+              height="clamp(360px, 52vh, 620px)"
+              incidents={incidents}
+              roads={roads}
+              routes={routes}
+              shelters={shelters}
+              hospitals={hospitals}
+              teams={teams}
+              onIncidentClick={handleSelectIncident}
+            />
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-4 py-2.5 text-[11px] text-muted-foreground">
             {[
@@ -284,14 +386,68 @@ function ControlDashboard() {
         </Panel>
 
         <div className="space-y-4">
+          {/* Priority Queue (Scenario B) */}
+          <Panel>
+            <PanelHeader
+              title="Priority Queue (Scenario B)"
+              meta={`${priorityQueue.length} ranked`}
+              icon={<Zap className="size-4 text-warning" />}
+              action={
+                <button
+                  onClick={fetchAll}
+                  className="text-[11px] font-medium text-primary hover:underline"
+                >
+                  Recalculate
+                </button>
+              }
+            />
+            <div className="p-3 text-[11px] text-muted-foreground border-b border-border bg-surface-2/40">
+              Formula: Severity (Crit: 100, Warn: 50, Info: 20) + (Victims × 2) + (Age × 0.75/m). Tie-breaker: Earliest arrival.
+            </div>
+            <ul className="max-h-60 divide-y divide-border overflow-y-auto">
+              {priorityQueue.length === 0 ? (
+                <li className="p-4 text-center text-xs text-muted-foreground">No pending items in queue.</li>
+              ) : (
+                priorityQueue.map((item, idx) => (
+                  <li
+                    key={item.id}
+                    onClick={() => handleSelectIncident(item)}
+                    className="cursor-pointer px-3 py-2.5 hover:bg-surface-2 transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span className="flex items-center gap-1 font-mono text-[11px] font-bold">
+                        <span className="flex size-4 items-center justify-center rounded-full bg-primary/20 text-[10px] text-primary">
+                          #{idx + 1}
+                        </span>
+                        {item.id}
+                      </span>
+                      <span className="font-mono text-xs font-bold text-primary">
+                        {item.priorityScore} pts
+                      </span>
+                    </div>
+                    <p className="mt-0.5 truncate text-xs font-medium">{item.title}</p>
+                    <div className="mt-0.5 flex items-center justify-between text-[10px] text-muted-foreground">
+                      <span>{item.severity?.toUpperCase()} · {item.victims} victims</span>
+                      <span>Age: {item.waitMinutes ?? item.ageMinutes ?? 0}m (+{(item.waitingTimeScore ?? item.scoreBreakdown?.starvationAgingBonus ?? 0).toFixed(1)} pts)</span>
+                    </div>
+                  </li>
+                ))
+              )}
+            </ul>
+          </Panel>
+
           <Panel>
             <PanelHeader title="Active incidents" meta={`${critical.length} critical`} icon={<TriangleAlert className="size-4" />} />
-            <ul className="max-h-72 divide-y divide-border overflow-y-auto">
+            <ul className="max-h-56 divide-y divide-border overflow-y-auto">
               {activeIncidents.length === 0 ? (
                 <li className="px-4 py-6 text-center text-sm text-muted-foreground">No active incidents.</li>
               ) : (
                 activeIncidents.map((i) => (
-                  <li key={i.id} className="cursor-pointer px-4 py-3 transition-colors hover:bg-surface-2">
+                  <li
+                    key={i.id}
+                    onClick={() => handleSelectIncident(i)}
+                    className="cursor-pointer px-4 py-3 transition-colors hover:bg-surface-2"
+                  >
                     <div className="flex items-center justify-between gap-2">
                       <span className="num text-[11px] text-muted-foreground">{i.id}</span>
                       <StatusPill
@@ -523,6 +679,155 @@ function ControlDashboard() {
           </table>
         </div>
       </Panel>
+
+      {/* Incident Action Drawer / Modal (Scenarios C, E, F) */}
+      <ModalPortal
+        isOpen={Boolean(selectedIncident)}
+        onClose={() => {
+          setSelectedIncident(null);
+          setDispatchFeedback(null);
+          setRaceFeedback(null);
+        }}
+        title={
+          selectedIncident ? (
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs font-bold text-primary">{selectedIncident.id}</span>
+                <StatusPill tone={selectedIncident.severity === "critical" ? "critical" : "warning"}>
+                  {selectedIncident.severity}
+                </StatusPill>
+                <StatusPill tone={selectedIncident.status === "dispatched" ? "info" : "warning"}>
+                  {selectedIncident.status}
+                </StatusPill>
+                {selectedIncident.priorityScore !== undefined && (
+                  <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[11px] font-bold text-primary">
+                    Priority #{selectedIncident.priorityRank || "—"} · {selectedIncident.priorityScore} pts (+{selectedIncident.waitingTimeScore ?? 0} aging)
+                  </span>
+                )}
+              </div>
+              <h3 className="mt-1 text-lg font-bold">{selectedIncident.title}</h3>
+            </div>
+          ) : undefined
+        }
+        description={
+          selectedIncident ? (
+            <div>
+              <p className="text-xs text-muted-foreground">
+                {selectedIncident.sector} · Coordinates: [{selectedIncident.pos?.[0]?.toFixed(4)}, {selectedIncident.pos?.[1]?.toFixed(4)}] · {selectedIncident.victims} affected
+              </p>
+              {selectedIncident.description && (
+                <p className="mt-1 text-xs italic text-foreground/80">{selectedIncident.description}</p>
+              )}
+            </div>
+          ) : undefined
+        }
+        maxWidth="max-w-2xl"
+      >
+        {selectedIncident && (
+          <>
+            {dispatchFeedback && (
+              <div className="flex items-center gap-2 rounded-md border border-success/30 bg-success/10 p-3 text-xs text-success">
+                <CheckCircle2 className="size-4 shrink-0" />
+                <span>{dispatchFeedback}</span>
+              </div>
+            )}
+
+            {raceFeedback && (
+              <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-xs space-y-1">
+                <p className="font-semibold text-warning flex items-center gap-1.5">
+                  <ShieldAlert className="size-4" /> Scenario E: Atomic Concurrency & Double-Booking Test
+                </p>
+                {raceFeedback.attempt1 && <p className="text-muted-foreground font-mono">{raceFeedback.attempt1}</p>}
+                {raceFeedback.attempt2 && <p className="text-critical font-mono font-semibold">{raceFeedback.attempt2}</p>}
+                {raceFeedback.error && <p className="text-critical">{raceFeedback.error}</p>}
+              </div>
+            )}
+
+            {/* Scenario C: Vehicle Compatibility & Single Assignment */}
+            <div className="space-y-2 border border-border rounded-lg p-3 bg-surface-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Radio className="size-3.5" /> Compatible Vehicles (Scenario C)
+                </h4>
+                <span className="text-[11px] text-muted-foreground">
+                  Incident Type: <strong className="text-primary">{selectedIncident.type?.toUpperCase()}</strong>
+                </span>
+              </div>
+
+              {loadingVehicles ? (
+                <div className="py-4 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+                  <RefreshCw className="size-3.5 animate-spin" /> Evaluating vehicle capability matrix...
+                </div>
+              ) : compatibleVehicles.length === 0 ? (
+                <p className="py-3 text-center text-xs text-muted-foreground">No compatible vehicles currently available in fleet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {compatibleVehicles.map((v) => (
+                    <div key={v.teamId} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-surface p-2.5 text-xs">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold">{v.callsign}</span>
+                          <span className="text-muted-foreground">({v.unit})</span>
+                          <StatusPill tone="success">Equipped</StatusPill>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          Distance: {v.distanceKm} km · ETA: ~{v.estimatedTimeMin} min · Fuel: {v.fuel}%
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleAssignVehicle(v.teamId)}
+                          className="rounded bg-primary px-3 py-1.5 font-medium text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
+                        >
+                          Assign Vehicle
+                        </button>
+                        <button
+                          onClick={() => handleSimulateRaceCondition(v.teamId)}
+                          title="Simulate 2 operators simultaneously assigning this exact unit"
+                          className="rounded border border-warning/50 bg-warning/10 px-2.5 py-1.5 font-medium text-warning hover:bg-warning/20 transition-colors cursor-pointer"
+                        >
+                          Test Race (409)
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Scenario F: Facility Selection / Diversion Check */}
+            <div className="space-y-2 border border-border rounded-lg p-3 bg-surface-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Building2 className="size-3.5" /> Emergency Facility Routing (Scenario F)
+                </h4>
+                <button
+                  onClick={handleFindFacility}
+                  className="text-xs text-primary font-medium hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <Crosshair className="size-3" /> Find Best Hospital / Shelter
+                </button>
+              </div>
+
+              {facilityRecommendation && (
+                <div className="rounded border border-border bg-surface p-2.5 text-xs space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold">{facilityRecommendation.facility?.name}</span>
+                    <StatusPill tone={facilityRecommendation.diversionWarning ? "warning" : "success"}>
+                      {facilityRecommendation.diversionWarning ? "Diverted" : "Direct Routing"}
+                    </StatusPill>
+                  </div>
+                  <p className="text-muted-foreground">{facilityRecommendation.rationale}</p>
+                  {facilityRecommendation.diversionWarning && (
+                    <p className="text-critical text-[11px] font-medium">⚠️ {facilityRecommendation.diversionWarning}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </ModalPortal>
     </div>
   );
 }
+

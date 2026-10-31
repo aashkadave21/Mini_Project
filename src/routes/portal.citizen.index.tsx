@@ -14,6 +14,7 @@ import {
   CloudOff,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Loader2,
   Plus,
   Trash2,
@@ -23,10 +24,13 @@ import {
   ArrowRight,
   HeartPulse,
   Lock,
+  Locate,
+  Crosshair,
 } from "lucide-react";
 import { RoleGuard } from "@/components/sdrep/RoleGuard";
 import { PortalShell, type PortalTabGroup } from "@/components/sdrep/PortalShell";
 import { MapCanvas } from "@/components/sdrep/MapCanvas";
+import { ModalPortal } from "@/components/sdrep/ModalPortal";
 import { Bar, MetricCard, PageHeading, Panel, PanelHeader, StatusPill, EmptyState } from "@/components/sdrep/primitives";
 import { api } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
@@ -107,6 +111,17 @@ function CitizenDashboardContent() {
   const [newPass, setNewPass] = useState("");
   const [passMsg, setPassMsg] = useState<string | null>(null);
 
+  // SOS Location & Emergency Specification State
+  const [sosAddress, setSosAddress] = useState("Riverside Bund Rd, Sector 7");
+  const [sosCoordinates, setSosCoordinates] = useState<[number, number]>([19.092, 72.862]);
+  const [sosEmergencyType, setSosEmergencyType] = useState<"medical" | "flood" | "fire" | "collapse" | "chemical">("flood");
+  const [sosSeverity, setSosSeverity] = useState<"critical" | "warning" | "info">("critical");
+  const [sosHeadcount, setSosHeadcount] = useState<number>(2);
+  const [sosMedicalUrgency, setSosMedicalUrgency] = useState<boolean>(true);
+  const [sosNotes, setSosNotes] = useState<string>("Flooding on ground floor, need boat extraction.");
+  const [geoError, setGeoError] = useState<string | null>(null);
+  const [geoSuccess, setGeoSuccess] = useState<string | null>(null);
+
   const fetchData = useCallback(async () => {
     try {
       const [profileRes, sheltersRes, reqRes] = await Promise.all([
@@ -138,19 +153,63 @@ function CitizenDashboardContent() {
     fetchData();
   }, [fetchData]);
 
-  const handleSOS = async (notes = "Emergency SOS button triggered from Citizen Portal") => {
+  const handleGeolocation = () => {
+    setGeoError(null);
+    setGeoSuccess(null);
+    if (!navigator.geolocation) {
+      setGeoError("Browser geolocation is not supported on this device. Please select a landmark or pin your position on the map.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = Number(pos.coords.latitude.toFixed(5));
+        const lng = Number(pos.coords.longitude.toFixed(5));
+        setSosCoordinates([lat, lng]);
+        setSosAddress(`GPS Resolved (${lat}, ${lng})`);
+        setGeoSuccess(`Geolocation verified via device GPS: [${lat}, ${lng}]`);
+      },
+      (err) => {
+        let msg = "Could not resolve browser geolocation.";
+        if (err.code === 1) msg = "Geolocation permission denied. Please select a known landmark or click on the map to pin your location.";
+        else if (err.code === 2) msg = "GPS satellite fix unavailable. Please pin your position directly on the interactive map.";
+        else if (err.code === 3) msg = "Geolocation request timed out. Please pin your position directly on the map.";
+        setGeoError(msg);
+      },
+      { timeout: 7000, enableHighAccuracy: true }
+    );
+  };
+
+  const handleMapPin = (latlng: [number, number]) => {
+    setSosCoordinates(latlng);
+    setSosAddress(`Map Pinned Landmark [${latlng[0]}, ${latlng[1]}]`);
+    setGeoSuccess(`Map position pinned at [${latlng[0]}, ${latlng[1]}]`);
+    setGeoError(null);
+  };
+
+  const handleSOS = async (customNotes?: string) => {
     setSosLoading(true);
     setSosStatus(null);
+    setInlineError(null);
     try {
+      if (!sosCoordinates || isNaN(sosCoordinates[0]) || isNaN(sosCoordinates[1])) {
+        throw new Error("Valid coordinates are required. Please pin your position on the map or select a sector landmark.");
+      }
+
       const res = await api.citizen.submitSOS({
+        pos: sosCoordinates,
+        address: sosAddress,
         sector: profile?.sector || "Sector 7 · Riverside",
-        headcount: 1,
-        medicalUrgency: true,
-        notes,
+        emergencyType: sosEmergencyType,
+        severity: sosSeverity,
+        headcount: Number(sosHeadcount) || 1,
+        medicalUrgency: sosMedicalUrgency,
+        notes: customNotes || sosNotes,
       });
 
-      setSosStatus(res.data?.sosId || "SOS-ACK");
-      setSosAssignedUnit(res.data?.assignedUnit || "ALPHA-1 (NDRF Water Rescue)");
+      const confirmedId = res.data?.incidentId || res.data?.sosId || "SOS-ACK";
+      setSosStatus(confirmedId);
+      setSosAssignedUnit(res.data?.assignedUnit || "Disaster Control Centre (Awaiting Unit Dispatch)");
+      setGeoSuccess(`Incident ${confirmedId} transmitted to Disaster Control Centre map at [${sosCoordinates[0]}, ${sosCoordinates[1]}].`);
       await fetchData();
     } catch (err: any) {
       setInlineError(err.message || "Failed to submit SOS. Please call 112 directly.");
@@ -602,91 +661,208 @@ function CitizenDashboardContent() {
       {activeTab === "sos" && (
         <div className="space-y-5">
           <PageHeading
-            eyebrow="Priority Dispatch Queue"
-            title="Emergency SOS & Assistance"
-            description="Trigger an instant high-priority extraction distress signal. Directly alerts tactical rescue units in your sector."
+            eyebrow="Interactive Crisis Management"
+            title="Emergency SOS & Location Dispatch"
+            description="Provide emergency details, resolve and review your precise coordinates, and transmit an active incident directly to the Disaster Control Centre map."
           />
 
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-            <Panel className="border-critical/30">
-              <PanelHeader title="One-Tap Extraction Beacon" icon={<Siren className="size-5 text-critical" />} />
-              <div className="p-6 space-y-6 text-center">
-                <div className="mx-auto grid size-28 place-items-center rounded-full bg-critical/10 border-2 border-critical animate-pulse-ring">
+          {geoError && (
+            <div className="flex items-center gap-2 rounded-md border border-critical/40 bg-critical/10 p-3 text-xs text-critical">
+              <AlertTriangle className="size-4 shrink-0" />
+              <span>{geoError}</span>
+            </div>
+          )}
+
+          {geoSuccess && (
+            <div className="flex items-center gap-2 rounded-md border border-success/40 bg-success/10 p-3 text-xs text-success">
+              <CheckCircle2 className="size-4 shrink-0" />
+              <span>{geoSuccess}</span>
+            </div>
+          )}
+
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px]">
+            {/* Interactive Location Selection & Map Pinning */}
+            <Panel>
+              <PanelHeader
+                title="Geospatial Location & Map Pinning"
+                icon={<MapPin className="size-4 text-primary" />}
+                meta="Click map or use GPS"
+                action={
                   <button
-                    onClick={() => handleSOS()}
-                    disabled={sosLoading}
-                    className="grid size-20 place-items-center rounded-full bg-critical text-critical-foreground text-xl font-black shadow-2xl hover:scale-105 active:scale-95 transition-transform disabled:opacity-50"
+                    type="button"
+                    onClick={handleGeolocation}
+                    className="flex items-center gap-1 rounded border border-border bg-surface-2 px-2.5 py-1 text-xs hover:bg-surface-3 transition-colors text-foreground"
                   >
-                    {sosLoading ? <Loader2 className="size-8 animate-spin" /> : "SOS"}
+                    <Locate className="size-3.5 text-primary" />
+                    <span>Use Browser GPS</span>
                   </button>
+                }
+              />
+              <div className="p-4 space-y-4">
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-foreground">Street Address / Landmark</label>
+                  <input
+                    type="text"
+                    value={sosAddress}
+                    onChange={(e) => setSosAddress(e.target.value)}
+                    placeholder="Enter street address, building or landmark name…"
+                    className="w-full rounded-md border border-input bg-surface-2 px-3 py-2 text-xs"
+                  />
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    <span className="text-[10px] text-muted-foreground mr-1">Quick Presets:</span>
+                    {[
+                      { label: "Sector 7 Riverside", pos: [19.092, 72.862] as [number, number], addr: "Riverside Bund Rd, Sector 7" },
+                      { label: "Sector 3 Port Docks", pos: [19.062, 72.848] as [number, number], addr: "Dock Road Gate 3, Sector 3" },
+                      { label: "Sector 12 Old Town", pos: [19.083, 72.895] as [number, number], addr: "Old Town Market Cross, Sector 12" },
+                      { label: "Sector 9 Civic Centre", pos: [19.07, 72.905] as [number, number], addr: "Civic Hospital Junction, Sector 9" },
+                    ].map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => {
+                          setSosAddress(preset.addr);
+                          setSosCoordinates(preset.pos);
+                          setGeoSuccess(`Preset selected: ${preset.addr} [${preset.pos[0]}, ${preset.pos[1]}]`);
+                        }}
+                        className="rounded border border-border bg-surface-3 px-2 py-0.5 text-[10px] hover:border-primary text-foreground"
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                <div className="max-w-md mx-auto space-y-2">
-                  <p className="text-sm font-semibold text-foreground">
-                    Pressing SOS transmits your GPS coordinate (Sector 7) to active rescue craft.
+                <div className="overflow-hidden rounded-lg border border-border">
+                  <p className="bg-surface-3 px-3 py-1.5 text-[11px] font-medium text-muted-foreground flex items-center justify-between">
+                    <span>Click anywhere on the map to pin exact emergency coordinates:</span>
+                    <span className="font-mono text-primary font-bold">[{sosCoordinates[0]}, {sosCoordinates[1]}]</span>
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    A multi-factor greedy allocation engine dispatches the nearest available rescue boat or tactical squad.
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap justify-center gap-3 pt-2">
-                  <button
-                    onClick={() => handleSOS("Medical evacuation needed: oxygen/inhaler depleted")}
-                    className="rounded-md border border-border bg-surface-2 px-3 py-1.5 text-xs text-foreground hover:bg-surface-3"
-                  >
-                    + Medical Urgency
-                  </button>
-                  <button
-                    onClick={() => handleSOS("Trapped on rooftop: rising floodwaters")}
-                    className="rounded-md border border-border bg-surface-2 px-3 py-1.5 text-xs text-foreground hover:bg-surface-3"
-                  >
-                    + Trapped on Rooftop
-                  </button>
-                  <button
-                    onClick={() => handleSOS("Elderly and infants present (Headcount: 4)")}
-                    className="rounded-md border border-border bg-surface-2 px-3 py-1.5 text-xs text-foreground hover:bg-surface-3"
-                  >
-                    + Family / Elderly
-                  </button>
+                  <div className="h-64">
+                    <MapCanvas
+                      height="100%"
+                      zoom={14}
+                      center={sosCoordinates}
+                      interactivePin={sosCoordinates}
+                      onMapClick={handleMapPin}
+                      layers={{ hazards: true, roads: true, incidents: false, shelters: false, hospitals: false, teams: false }}
+                    />
+                  </div>
                 </div>
               </div>
             </Panel>
 
+            {/* Emergency Details, Pre-submission Review & Action */}
             <div className="space-y-4">
-              <Panel>
-                <PanelHeader title="Direct Emergency Hotlines" />
-                <div className="p-4 space-y-3">
-                  <div className="flex items-center justify-between rounded-md border border-critical/30 bg-critical/10 p-3">
-                    <div>
-                      <p className="text-xs font-semibold text-critical">National Emergency</p>
-                      <p className="text-[10px] text-muted-foreground">Police, Fire, Ambulance</p>
-                    </div>
-                    <a href="tel:112" className="rounded bg-critical px-3 py-1.5 text-xs font-bold text-critical-foreground">
-                      112
-                    </a>
+              <Panel className="border-critical/40">
+                <PanelHeader title="Emergency Specifications" icon={<Siren className="size-4 text-critical" />} />
+                <div className="p-4 space-y-3.5">
+                  <div>
+                    <label className="block text-xs font-semibold text-foreground">Emergency Type *</label>
+                    <select
+                      value={sosEmergencyType}
+                      onChange={(e) => setSosEmergencyType(e.target.value as any)}
+                      className="mt-1 w-full rounded-md border border-input bg-surface-2 px-3 py-2 text-xs"
+                    >
+                      <option value="flood">Flood Extraction / Water Rescue (Requires Rescue Boat)</option>
+                      <option value="medical">Medical Trauma / Critical Patient (Requires Ambulance)</option>
+                      <option value="fire">Active Fire / Hazardous Area (Requires Fire Engine)</option>
+                      <option value="collapse">Structural Collapse / Trapped Victims (Requires USAR)</option>
+                      <option value="chemical">Toxic / Chemical Inhalation Hazard</option>
+                    </select>
                   </div>
 
-                  <div className="flex items-center justify-between rounded-md border border-border bg-surface-2 p-3">
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <p className="text-xs font-semibold text-foreground">Disaster Control Helpline</p>
-                      <p className="text-[10px] text-muted-foreground">Municipal EOC Operations</p>
+                      <label className="block text-xs font-semibold text-foreground">Severity Level *</label>
+                      <select
+                        value={sosSeverity}
+                        onChange={(e) => setSosSeverity(e.target.value as any)}
+                        className="mt-1 w-full rounded-md border border-input bg-surface-2 px-3 py-2 text-xs"
+                      >
+                        <option value="critical">Critical (Immediate Danger to Life)</option>
+                        <option value="warning">Urgent (Evacuation Needed Soon)</option>
+                        <option value="info">Moderate / Advisory Assistance</option>
+                      </select>
                     </div>
-                    <a href="tel:1077" className="rounded bg-surface-3 px-3 py-1.5 text-xs font-semibold text-foreground">
-                      1077
-                    </a>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-foreground">Affected People (Headcount) *</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={30}
+                        value={sosHeadcount}
+                        onChange={(e) => setSosHeadcount(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="mt-1 w-full rounded-md border border-input bg-surface-2 px-3 py-2 text-xs font-mono"
+                      />
+                    </div>
                   </div>
+
+                  <div>
+                    <label className="flex items-center gap-2 text-xs cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={sosMedicalUrgency}
+                        onChange={(e) => setSosMedicalUrgency(e.target.checked)}
+                        className="size-4 accent-critical"
+                      />
+                      <span className="font-semibold text-foreground">Immediate Medical Attention Required (Oxygen, Trauma, Elderly)</span>
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-foreground">Field Observations / Extraction Notes</label>
+                    <textarea
+                      rows={2}
+                      value={sosNotes}
+                      onChange={(e) => setSosNotes(e.target.value)}
+                      placeholder="e.g. Water height 1.8m, trapped on terrace with elderly family member…"
+                      className="mt-1 w-full rounded-md border border-input bg-surface-2 px-3 py-2 text-xs"
+                    />
+                  </div>
+
+                  {/* Location Pre-submission Review Card */}
+                  <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-1.5 text-xs">
+                    <p className="font-bold text-foreground flex items-center justify-between">
+                      <span>Location Review Prior to Transmission:</span>
+                      <StatusPill tone="info">Coordinates Validated</StatusPill>
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Coordinates: <strong className="font-mono text-foreground">[{sosCoordinates[0].toFixed(5)}, {sosCoordinates[1].toFixed(5)}]</strong>
+                    </p>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      Address: <strong className="text-foreground">{sosAddress}</strong>
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Casualties: <strong className="text-foreground">{sosHeadcount} person(s)</strong> · Type: <strong className="text-foreground uppercase">{sosEmergencyType}</strong>
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSOS()}
+                    disabled={sosLoading}
+                    className="w-full flex items-center justify-center gap-2 rounded-md bg-critical py-3 text-sm font-bold text-critical-foreground hover:bg-critical/90 shadow-lg disabled:opacity-50 transition-all cursor-pointer"
+                  >
+                    {sosLoading ? <Loader2 className="size-4 animate-spin" /> : <Siren className="size-4" />}
+                    <span>{sosLoading ? "Transmitting Verified SOS…" : "Transmit Emergency SOS to Control Centre"}</span>
+                  </button>
                 </div>
               </Panel>
 
               <Panel>
-                <PanelHeader title="Guidelines During Extraction" />
-                <ul className="p-4 space-y-2 text-xs text-muted-foreground list-disc list-inside">
-                  <li>Keep high-visibility clothing or a torch ready.</li>
-                  <li>Do not enter fast-moving floodwaters on foot.</li>
-                  <li>Have identity documents and medicines sealed in a plastic pouch.</li>
-                  <li>Follow instructions of NDRF water rescue personnel.</li>
-                </ul>
+                <PanelHeader title="Direct Emergency Hotlines" />
+                <div className="p-3 space-y-2">
+                  <div className="flex items-center justify-between rounded-md border border-critical/30 bg-critical/10 p-2.5">
+                    <div>
+                      <p className="text-xs font-semibold text-critical">National Emergency Response</p>
+                      <p className="text-[10px] text-muted-foreground">Police · Fire · Ambulance</p>
+                    </div>
+                    <a href="tel:112" className="rounded bg-critical px-2.5 py-1 text-xs font-bold text-critical-foreground">
+                      112
+                    </a>
+                  </div>
+                </div>
               </Panel>
             </div>
           </div>
@@ -988,70 +1164,67 @@ function CitizenDashboardContent() {
       )}
 
       {/* Add Family Modal */}
-      {showAddFamilyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-xl border border-border bg-surface p-6 shadow-2xl">
-            <h3 className="text-base font-semibold text-foreground">Add Family Member</h3>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Add next of kin to monitor welfare status during disaster evacuation.
-            </p>
-
-            <form className="mt-4 space-y-3" onSubmit={handleAddFamily}>
-              <div>
-                <label className="block text-xs text-muted-foreground">Full Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={newFamilyName}
-                  onChange={(e) => setNewFamilyName(e.target.value)}
-                  placeholder="e.g. Meera Iyer"
-                  className="mt-1 w-full rounded-md border border-input bg-surface-2 px-3 py-2 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs text-muted-foreground">Current Location / Status</label>
-                <input
-                  type="text"
-                  value={newFamilyStatus}
-                  onChange={(e) => setNewFamilyStatus(e.target.value)}
-                  placeholder="e.g. At shelter SH-01"
-                  className="mt-1 w-full rounded-md border border-input bg-surface-2 px-3 py-2 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs text-muted-foreground">Safety Tone</label>
-                <select
-                  value={newFamilyTone}
-                  onChange={(e) => setNewFamilyTone(e.target.value as any)}
-                  className="mt-1 w-full rounded-md border border-input bg-surface-2 px-3 py-2 text-xs"
-                >
-                  <option value="success">Safe / Accounted for</option>
-                  <option value="warning">En route / Transit</option>
-                  <option value="critical">Unreachable / Needs help</option>
-                </select>
-              </div>
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="submit"
-                  className="flex-1 rounded-md bg-primary py-2 text-xs font-semibold text-primary-foreground"
-                >
-                  Save Member
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowAddFamilyModal(false)}
-                  className="rounded-md border border-border bg-surface-2 px-4 py-2 text-xs font-medium text-foreground"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
+      <ModalPortal
+        isOpen={showAddFamilyModal}
+        onClose={() => setShowAddFamilyModal(false)}
+        title="Add Family Member"
+        description="Add next of kin to monitor welfare status during disaster evacuation."
+        maxWidth="max-w-md"
+      >
+        <form className="space-y-3" onSubmit={handleAddFamily}>
+          <div>
+            <label className="block text-xs text-muted-foreground">Full Name *</label>
+            <input
+              type="text"
+              required
+              value={newFamilyName}
+              onChange={(e) => setNewFamilyName(e.target.value)}
+              placeholder="e.g. Meera Iyer"
+              className="mt-1 w-full rounded-md border border-input bg-surface-2 px-3 py-2 text-xs"
+            />
           </div>
-        </div>
-      )}
+
+          <div>
+            <label className="block text-xs text-muted-foreground">Current Location / Status</label>
+            <input
+              type="text"
+              value={newFamilyStatus}
+              onChange={(e) => setNewFamilyStatus(e.target.value)}
+              placeholder="e.g. At shelter SH-01"
+              className="mt-1 w-full rounded-md border border-input bg-surface-2 px-3 py-2 text-xs"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs text-muted-foreground">Safety Tone</label>
+            <select
+              value={newFamilyTone}
+              onChange={(e) => setNewFamilyTone(e.target.value as any)}
+              className="mt-1 w-full rounded-md border border-input bg-surface-2 px-3 py-2 text-xs"
+            >
+              <option value="success">Safe / Accounted for</option>
+              <option value="warning">En route / Transit</option>
+              <option value="critical">Unreachable / Needs help</option>
+            </select>
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button
+              type="submit"
+              className="flex-1 rounded-md bg-primary py-2 text-xs font-semibold text-primary-foreground cursor-pointer hover:bg-primary/90 transition-colors"
+            >
+              Save Member
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAddFamilyModal(false)}
+              className="rounded-md border border-border bg-surface-2 px-4 py-2 text-xs font-medium text-foreground cursor-pointer hover:bg-surface-3 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </ModalPortal>
     </PortalShell>
   );
 }

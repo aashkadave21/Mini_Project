@@ -23,8 +23,13 @@ export function MapCanvas(props: TacticalMapProps) {
   useEffect(() => setMounted(true), []);
   if (!mounted) return <Fallback height={props.height} />;
   return (
-    <Suspense fallback={<Fallback height={props.height} />}>
-      <TacticalMap {...props} />
-    </Suspense>
+    <div
+      className="relative isolate z-[1] w-full overflow-hidden rounded-lg"
+      style={{ height: props.height ?? "100%" }}
+    >
+      <Suspense fallback={<Fallback height={props.height} />}>
+        <TacticalMap {...props} />
+      </Suspense>
+    </div>
   );
 }

@@ -4,16 +4,16 @@
   "sideEffects": false,
   "type": "module",
   "scripts": {
-    "dev": "vite dev",
-    "server": "tsx server/src/index.ts",
-    "server:migrate": "tsx server/src/db/migrate.ts",
-    "server:seed": "tsx server/src/db/seed.ts",
-    "test:backend": "tsx test/backend.test.ts",
-    "build": "vite build",
-    "build:dev": "vite build --mode development",
-    "preview": "vite preview",
-    "lint": "eslint .",
-    "format": "prettier --write ."
+    "dev": "node node_modules/vite/bin/vite.js dev",
+    "server": "node node_modules/tsx/dist/cli.mjs server/src/index.ts",
+    "server:migrate": "node node_modules/tsx/dist/cli.mjs server/src/db/migrate.ts",
+    "server:seed": "node node_modules/tsx/dist/cli.mjs server/src/db/seed.ts",
+    "test:backend": "node node_modules/tsx/dist/cli.mjs test/backend.test.ts",
+    "build": "node node_modules/vite/bin/vite.js build",
+    "build:dev": "node node_modules/vite/bin/vite.js build --mode development",
+    "preview": "node node_modules/vite/bin/vite.js preview",
+    "lint": "node node_modules/eslint/bin/eslint.js .",
+    "format": "node node_modules/prettier/bin/prettier.cjs --write ."
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
